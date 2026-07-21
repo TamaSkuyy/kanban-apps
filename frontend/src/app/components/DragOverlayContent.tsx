@@ -37,7 +37,7 @@ export default function DragOverlayContent({
             {column.title}
           </h2>
           <div className="space-y-2">
-            {column.tasks.map((task) => (
+            {(column.tasks || []).map((task) => (
               <TaskCard key={task.id} boardId={currentBoard.id} task={task} />
             ))}
           </div>

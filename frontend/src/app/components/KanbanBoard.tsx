@@ -94,7 +94,7 @@ export default function KanbanBoard() {
     const newPosition =
       overData?.type === 'task'
         ? getTaskPosition(toColumn, overIdStr)
-        : toColumn.tasks.length;
+        : (toColumn.tasks || []).length;
 
     try {
       await moveTaskOptimistic(activeIdStr, activeColumn.id, overColumnId, newPosition);
@@ -116,18 +116,23 @@ export default function KanbanBoard() {
       onDragEnd={handleDragEnd}
     >
       <SortableContext items={columnIds} strategy={verticalListSortingStrategy}>
-        <div className="grid gap-4 md:grid-cols-3">
-          {currentBoard.columns.map((column) => (
-            <KanbanColumn key={column.id} column={column}>
-              <SortableContext items={column.tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-                <div className="space-y-2">
-                  {column.tasks.map((task) => (
-                    <SortableTaskCard key={task.id} boardId={currentBoard.id} task={task} />
-                  ))}
-                </div>
-              </SortableContext>
-            </KanbanColumn>
-          ))}
+        <div className="flex gap-4 overflow-x-auto pb-4 -mx-1 px-1 snap-x snap-mandatory md:grid md:grid-cols-3 md:overflow-visible md:pb-0 md:snap-none">
+          {currentBoard.columns.map((column) => {
+            const tasks = column.tasks || [];
+            return (
+              <div key={column.id} className="snap-center md:snap-none">
+              <KanbanColumn key={column.id} column={column}>
+                <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+                  <div className="space-y-2">
+                    {tasks.map((task) => (
+                      <SortableTaskCard key={task.id} boardId={currentBoard.id} task={task} />
+                    ))}
+                  </div>
+                </SortableContext>
+              </KanbanColumn>
+              </div>
+            );
+          })}
         </div>
       </SortableContext>
 

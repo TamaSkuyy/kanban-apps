@@ -17,7 +17,6 @@ export default function KanbanColumn({
   const { createTask } = useKanbanStore();
   const [taskTitle, setTaskTitle] = useState('');
 
-  // Sortable for column reordering
   const {
     attributes,
     listeners,
@@ -30,7 +29,6 @@ export default function KanbanColumn({
     data: { type: 'column', column },
   });
 
-  // Droppable for task drop detection (column highlight)
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({
     id: column.id,
     data: { type: 'column', column },
@@ -40,6 +38,9 @@ export default function KanbanColumn({
     transform: CSS.Transform.toString(transform),
     transition,
   };
+
+  const tasks = column.tasks || [];
+  const taskCount = tasks.length;
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
@@ -52,26 +53,41 @@ export default function KanbanColumn({
     <div
       ref={setDroppableRef}
       style={style}
-      className={`rounded-lg bg-slate-100 p-3 transition-colors ${
+      className={`flex w-[280px] shrink-0 flex-col rounded-lg bg-slate-100 p-3 transition-colors sm:w-auto sm:shrink ${
         isOver ? 'ring-2 ring-blue-400 bg-blue-50' : ''
       } ${isDragging ? 'opacity-50' : ''}`}
     >
       <div ref={setSortableRef} {...attributes} {...listeners}>
-        <h2 className="mb-3 cursor-grab text-sm font-semibold uppercase tracking-wide text-slate-600 active:cursor-grabbing">
+        <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-600 cursor-grab active:cursor-grabbing">
           {column.title}
+          {taskCount > 0 && (
+            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-300 px-1.5 text-xs font-medium text-slate-700">
+              {taskCount}
+            </span>
+          )}
         </h2>
       </div>
 
-      {children}
+      <div className="min-h-[4rem] flex-1">
+        {children}
+        {taskCount === 0 && (
+          <div className="mt-2 rounded-lg border border-dashed border-slate-300 p-4 text-center">
+            <p className="text-xs text-slate-400">No tasks yet</p>
+            <p className="text-xs text-slate-300">Drag a card here or add one below</p>
+          </div>
+        )}
+      </div>
 
       <form onSubmit={onCreate} className="mt-3 flex gap-2">
         <input
-          className="w-full rounded border bg-white px-2 py-1 text-sm"
+          className="w-full rounded border bg-white px-2 py-1.5 text-sm"
           value={taskTitle}
           onChange={(e) => setTaskTitle(e.target.value)}
-          placeholder="Add task"
+          placeholder="Add a task..."
         />
-        <button className="rounded bg-slate-900 px-2 py-1 text-xs text-white">Add</button>
+        <button className="shrink-0 rounded bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800">
+          Add
+        </button>
       </form>
     </div>
   );

@@ -78,6 +78,12 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const board = await apiFetch<Board>(`/api/boards/${boardId}`);
+      // Normalize: ensure every column has a tasks array
+      if (board.columns) {
+        for (const col of board.columns) {
+          if (!col.tasks) col.tasks = [];
+        }
+      }
       set({ currentBoard: board, loading: false });
     } catch (err) {
       set({ loading: false, error: err instanceof Error ? err.message : 'Failed to fetch board' });
@@ -216,7 +222,7 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
 
     // Remove task from all columns (in case it moved)
     for (const col of next.columns) {
-      col.tasks = col.tasks.filter((t) => t.id !== task.id);
+      col.tasks = (col.tasks || []).filter((t) => t.id !== task.id);
     }
 
     // Add task to its target column
@@ -242,7 +248,7 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
     if (!next?.columns) return;
 
     for (const col of next.columns) {
-      col.tasks = col.tasks.filter((t) => t.id !== taskId);
+      col.tasks = (col.tasks || []).filter((t) => t.id !== taskId);
     }
 
     set({ currentBoard: next });

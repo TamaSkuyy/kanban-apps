@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    container_name: invoice-postgres
+    environment:
+      POSTGRES_USER: invoiceuser
+      POSTGRES_PASSWORD: invoicepassword
+      POSTGRES_DB: invoicedb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U invoiceuser -d invoicedb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: dev
+    container_name: invoice-backend
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: invoiceuser
+      DB_PASSWORD: invoicepassword
+      DB_NAME: invoicedb
+      JWT_SECRET: your-secret-key-change-in-production-min-32-chars
+      JWT_EXPIRATION: 86400
+      LOG_FORMAT: text
+      LOG_LEVEL: debug
+      SENTRY_DSN: ""
+      ENV: development
+      RATE_LIMIT_RPS: "20"
+      RATE_LIMIT_BURST: "40"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./backend:/app
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health | grep -q healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: invoice-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ | grep -q '<!DOCTYPE\\|<div id=\"root\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  postgres_data:

@@ -34,3 +34,9 @@ __debug_bin
 # Next.js
 frontend/.turbo/
 frontend/next-env.d.ts
+
+# Generated compose
+docker-compose.prod.yml
+
+# Backend temp
+backend/tmp/

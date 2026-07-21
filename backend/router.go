@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -733,56 +732,82 @@ func (s *server) getBoardData(ctx context.Context, userID string, boardID string
 		return nil, err
 	}
 
-	colRows, err := s.db.Query(ctx, `
-		SELECT id, board_id, title, position, created_at
-		FROM columns
-		WHERE board_id = $1
-		ORDER BY position ASC, created_at ASC
+	// Single joined query: columns LEFT JOIN tasks
+	rows, err := s.db.Query(ctx, `
+		SELECT
+			c.id, c.board_id, c.title, c.position, c.created_at,
+			t.id, t.column_id, t.title, t.description, t.assignee,
+			t.due_date, t.position,
+			t.created_at, t.updated_at
+		FROM columns c
+		LEFT JOIN tasks t ON t.column_id = c.id
+		WHERE c.board_id = $1
+		ORDER BY c.position ASC, c.created_at ASC, t.position ASC, t.created_at ASC
 	`, boardID)
 	if err != nil {
 		return nil, err
 	}
-	defer colRows.Close()
+	defer rows.Close()
 
 	columns := []Column{}
 	columnByID := map[string]*Column{}
-	for colRows.Next() {
-		var col Column
-		if err := colRows.Scan(&col.ID, &col.BoardID, &col.Title, &col.Position, &col.CreatedAt); err != nil {
+
+	for rows.Next() {
+		var colID, colBoardID, colTitle string
+		var colPosition int
+		var colCreatedAt time.Time
+		var taskID, taskColumnID, taskTitle, taskDescription, taskAssignee *string
+		var taskDueDate *time.Time
+		var taskPosition *int
+		var taskCreatedAt, taskUpdatedAt *time.Time
+
+		if err := rows.Scan(
+			&colID, &colBoardID, &colTitle, &colPosition, &colCreatedAt,
+			&taskID, &taskColumnID, &taskTitle, &taskDescription, &taskAssignee,
+			&taskDueDate, &taskPosition, &taskCreatedAt, &taskUpdatedAt,
+		); err != nil {
 			return nil, err
 		}
-		col.Tasks = []Task{}
-		columns = append(columns, col)
-		columnByID[col.ID] = &columns[len(columns)-1]
-	}
 
-	taskRows, err := s.db.Query(ctx, `
-		SELECT id, column_id, title, description, assignee, due_date, position, created_at, updated_at
-		FROM tasks
-		WHERE column_id IN (SELECT id FROM columns WHERE board_id = $1)
-		ORDER BY position ASC, created_at ASC
-	`, boardID)
-	if err != nil {
-		return nil, err
-	}
-	defer taskRows.Close()
-
-	for taskRows.Next() {
-		var t Task
-		if err := taskRows.Scan(&t.ID, &t.ColumnID, &t.Title, &t.Description, &t.Assignee, &t.DueDate, &t.Position, &t.CreatedAt, &t.UpdatedAt); err != nil {
-			return nil, err
+		// Get or create column
+		col, ok := columnByID[colID]
+		if !ok {
+			columns = append(columns, Column{
+				ID:        colID,
+				BoardID:   colBoardID,
+				Title:     colTitle,
+				Position:  colPosition,
+				Tasks:     []Task{},
+				CreatedAt: colCreatedAt,
+			})
+			col = &columns[len(columns)-1]
+			columnByID[colID] = col
 		}
-		if col := columnByID[t.ColumnID]; col != nil {
+
+		// If this row has a task, add it
+		if taskID != nil {
+			t := Task{
+				ColumnID:    *taskColumnID,
+				Title:       *taskTitle,
+				Description: *taskDescription,
+				Assignee:    *taskAssignee,
+				DueDate:     taskDueDate,
+			}
+			if taskID != nil {
+				t.ID = *taskID
+			}
+			if taskPosition != nil {
+				t.Position = *taskPosition
+			}
+			if taskCreatedAt != nil {
+				t.CreatedAt = *taskCreatedAt
+			}
+			if taskUpdatedAt != nil {
+				t.UpdatedAt = *taskUpdatedAt
+			}
 			col.Tasks = append(col.Tasks, t)
 		}
 	}
-
-	sort.Slice(columns, func(i, j int) bool {
-		if columns[i].Position == columns[j].Position {
-			return columns[i].CreatedAt.Before(columns[j].CreatedAt)
-		}
-		return columns[i].Position < columns[j].Position
-	})
 
 	board.Columns = columns
 	return &board, nil
