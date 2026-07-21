@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kanban}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kanban}
+      POSTGRES_DB: ${POSTGRES_DB:-kanban}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    image: golang:1.25
+    working_dir: /app/backend
+    command: sh -c "go install github.com/air-verse/air@latest && air"
+    volumes:
+      - ./:/app
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://kanban:kanban@postgres:5432/kanban?sslmode=disable}
+      JWT_SECRET: ${JWT_SECRET:-change-me}
+      BACKEND_ADDR: ${BACKEND_ADDR:-:8080}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+
+  frontend:
+    image: node:20
+    working_dir: /app/frontend
+    command: sh -c "npm install && npm run dev -- --hostname 0.0.0.0 --port 3000"
+    volumes:
+      - ./:/app
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
