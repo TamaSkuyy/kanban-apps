@@ -27,6 +27,8 @@ type KanbanState = {
   deleteTask: (taskId: string) => Promise<void>;
   moveTaskOptimistic: (taskId: string, fromColumnId: string, toColumnId: string, newPosition?: number) => Promise<void>;
   moveColumnOptimistic: (columnId: string, newPosition: number) => Promise<void>;
+  applyTaskEvent: (task: Task) => void;
+  removeTaskFromStore: (taskId: string) => void;
 };
 
 function cloneBoard(board: Board | null): Board | null {
@@ -202,5 +204,47 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
       });
       throw err;
     }
+  },
+
+  // Incremental updates from SSE — no API calls, pure state mutation
+  applyTaskEvent: (task) => {
+    const board = get().currentBoard;
+    if (!board?.columns) return;
+
+    const next = cloneBoard(board);
+    if (!next?.columns) return;
+
+    // Remove task from all columns (in case it moved)
+    for (const col of next.columns) {
+      col.tasks = col.tasks.filter((t) => t.id !== task.id);
+    }
+
+    // Add task to its target column
+    const targetColumn = next.columns.find((c) => c.id === task.column_id);
+    if (targetColumn) {
+      // Insert at the right position
+      const pos = Math.min(task.position, targetColumn.tasks.length);
+      targetColumn.tasks.splice(pos, 0, task);
+      // Reindex
+      targetColumn.tasks.forEach((t, i) => {
+        t.position = i;
+      });
+    }
+
+    set({ currentBoard: next });
+  },
+
+  removeTaskFromStore: (taskId) => {
+    const board = get().currentBoard;
+    if (!board?.columns) return;
+
+    const next = cloneBoard(board);
+    if (!next?.columns) return;
+
+    for (const col of next.columns) {
+      col.tasks = col.tasks.filter((t) => t.id !== taskId);
+    }
+
+    set({ currentBoard: next });
   },
 }));

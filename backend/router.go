@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -398,7 +398,7 @@ func (s *server) createBoard(c *gin.Context) {
 		return
 	}
 
-	s.publishBoardEvent(b.ID, "board.created")
+	s.publishBoardEvent(b.ID, "board.created", b)
 	c.JSON(http.StatusCreated, b)
 }
 
@@ -438,7 +438,7 @@ func (s *server) updateBoard(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "board not found"})
 		return
 	}
-	s.publishBoardEvent(c.Param("id"), "board.updated")
+	s.publishBoardEvent(c.Param("id"), "board.updated", nil)
 	c.Status(http.StatusNoContent)
 }
 
@@ -499,7 +499,7 @@ func (s *server) createTask(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create task"})
 		return
 	}
-	s.publishBoardEvent(boardID, "task.created")
+	s.publishBoardEvent(boardID, "task.created", task)
 	c.JSON(http.StatusCreated, task)
 }
 
@@ -534,7 +534,7 @@ func (s *server) updateColumn(c *gin.Context) {
 		return
 	}
 
-	s.publishBoardEvent(boardID, "column.updated")
+	s.publishBoardEvent(boardID, "column.updated", map[string]interface{}{"column_id": c.Param("id"), "position": *req.Position})
 	c.Status(http.StatusNoContent)
 }
 
@@ -577,6 +577,8 @@ func (s *server) updateTask(c *gin.Context) {
 		return
 	}
 
+		originalColumnID := current.ColumnID
+
 	if req.Title != nil {
 		current.Title = *req.Title
 	}
@@ -615,7 +617,11 @@ func (s *server) updateTask(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update task"})
 		return
 	}
-	s.publishBoardEvent(boardID, "task.updated")
+	if current.ColumnID != originalColumnID {
+		s.publishBoardEvent(boardID, "task.moved", current)
+	} else {
+		s.publishBoardEvent(boardID, "task.updated", current)
+	}
 	c.Status(http.StatusNoContent)
 }
 
@@ -638,7 +644,7 @@ func (s *server) deleteTask(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete task"})
 		return
 	}
-	s.publishBoardEvent(boardID, "task.deleted")
+	s.publishBoardEvent(boardID, "task.deleted", map[string]string{"task_id": c.Param("id")})
 	c.Status(http.StatusNoContent)
 }
 
@@ -673,8 +679,15 @@ func (s *server) boardEvents(c *gin.Context) {
 	})
 }
 
-func (s *server) publishBoardEvent(boardID, eventType string) {
-	payload := []byte(fmt.Sprintf(`{"type":"%s","board_id":"%s"}`, eventType, boardID))
+type boardEvent struct {
+	Type    string      `json:"type"`
+	BoardID string      `json:"board_id"`
+	Data    interface{} `json:"data,omitempty"`
+}
+
+func (s *server) publishBoardEvent(boardID, eventType string, data interface{}) {
+	evt := boardEvent{Type: eventType, BoardID: boardID, Data: data}
+	payload, _ := json.Marshal(evt)
 	s.hub.publish(boardID, payload)
 }
 
