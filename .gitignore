@@ -1,0 +1,36 @@
+# Dependencies
+frontend/node_modules/
+
+# Build output
+frontend/.next/
+frontend/out/
+
+# Go binary
+backend/kanban-backend
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug
+__debug_bin
+*.test
+
+# Logs
+*.log
+
+# Next.js
+frontend/.turbo/
+frontend/next-env.d.ts
