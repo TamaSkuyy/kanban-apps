@@ -29,14 +29,7 @@ export default function TaskCard({ boardId, task }: { boardId: string; task: Tas
   }
 
   return (
-    <div
-      className="rounded border bg-white p-2 shadow-sm"
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData('taskId', task.id);
-        e.dataTransfer.setData('columnId', task.column_id);
-      }}
-    >
+    <div className="rounded border bg-white p-2 shadow-sm">
       {editing ? (
         <input
           autoFocus

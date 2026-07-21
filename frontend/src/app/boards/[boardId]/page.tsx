@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import KanbanColumn from '../../components/KanbanColumn';
+import KanbanBoard from '../../components/KanbanBoard';
 import { useKanbanStore } from '../../lib/store';
 
 export default function BoardDetailPage() {
@@ -17,7 +17,9 @@ export default function BoardDetailPage() {
     const token = localStorage.getItem('token');
     if (!token) return;
     const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
-    const source = new EventSource(`${base}/api/boards/${params.boardId}/events?token=${encodeURIComponent(token)}`);
+    const source = new EventSource(
+      `${base}/api/boards/${params.boardId}/events?token=${encodeURIComponent(token)}`
+    );
     source.onmessage = () => {
       void fetchBoard(params.boardId);
     };
@@ -32,11 +34,7 @@ export default function BoardDetailPage() {
   return (
     <section>
       <h1 className="mb-4 text-2xl font-semibold">{currentBoard.title}</h1>
-      <div className="grid gap-4 md:grid-cols-3">
-        {currentBoard.columns?.map((column) => (
-          <KanbanColumn key={column.id} column={column} />
-        ))}
-      </div>
+      <KanbanBoard />
     </section>
   );
 }

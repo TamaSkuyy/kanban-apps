@@ -185,6 +185,7 @@ func NewRouter(db *pgxpool.Pool) *gin.Engine {
 	protected.PUT("/tasks/:id", s.updateTask)
 	protected.DELETE("/tasks/:id", s.deleteTask)
 	protected.POST("/columns/:colId/tasks", s.createTask)
+	protected.PUT("/columns/:id", s.updateColumn)
 
 	return r
 }
@@ -500,6 +501,41 @@ func (s *server) createTask(c *gin.Context) {
 	}
 	s.publishBoardEvent(boardID, "task.created")
 	c.JSON(http.StatusCreated, task)
+}
+
+func (s *server) updateColumn(c *gin.Context) {
+	var req struct {
+		Position *int `json:"position" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	var boardID string
+	err := s.db.QueryRow(c.Request.Context(), `
+		SELECT b.id
+		FROM columns c
+		JOIN boards b ON b.id = c.board_id
+		WHERE c.id = $1 AND b.user_id = $2
+	`, c.Param("id"), c.GetString("userID")).Scan(&boardID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "column not found"})
+		return
+	}
+
+	_, err = s.db.Exec(c.Request.Context(), `
+		UPDATE columns
+		SET position = $1
+		WHERE id = $2
+	`, *req.Position, c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update column"})
+		return
+	}
+
+	s.publishBoardEvent(boardID, "column.updated")
+	c.Status(http.StatusNoContent)
 }
 
 func (s *server) updateTask(c *gin.Context) {

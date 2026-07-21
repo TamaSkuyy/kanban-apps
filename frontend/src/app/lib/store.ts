@@ -25,7 +25,8 @@ type KanbanState = {
   createTask: (columnId: string, title: string) => Promise<void>;
   updateTask: (taskId: string, patch: TaskPatch) => Promise<void>;
   deleteTask: (taskId: string) => Promise<void>;
-  moveTaskOptimistic: (taskId: string, fromColumnId: string, toColumnId: string) => Promise<void>;
+  moveTaskOptimistic: (taskId: string, fromColumnId: string, toColumnId: string, newPosition?: number) => Promise<void>;
+  moveColumnOptimistic: (columnId: string, newPosition: number) => Promise<void>;
 };
 
 function cloneBoard(board: Board | null): Board | null {
@@ -117,8 +118,7 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
     }
   },
 
-  moveTaskOptimistic: async (taskId, fromColumnId, toColumnId) => {
-    if (fromColumnId === toColumnId) return;
+  moveTaskOptimistic: async (taskId, fromColumnId, toColumnId, newPosition?) => {
     const snapshot = cloneBoard(get().currentBoard);
     if (!snapshot) return;
 
@@ -132,10 +132,24 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
     const taskIndex = fromColumn.tasks.findIndex((task) => task.id === taskId);
     if (taskIndex < 0) return;
 
+    // Remove task from source column
     const [task] = fromColumn.tasks.splice(taskIndex, 1);
     task.column_id = toColumn.id;
-    task.position = toColumn.tasks.length;
-    toColumn.tasks.push(task);
+
+    // Insert at correct position in destination column
+    const pos = newPosition ?? toColumn.tasks.length;
+    toColumn.tasks.splice(pos, 0, task);
+
+    // Reindex positions in destination column
+    toColumn.tasks.forEach((t, i) => {
+      t.position = i;
+    });
+    // If source != dest, reindex source column too
+    if (fromColumnId !== toColumnId) {
+      fromColumn.tasks.forEach((t, i) => {
+        t.position = i;
+      });
+    }
 
     set({ currentBoard: next, error: null });
 
@@ -149,6 +163,44 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
         currentBoard: snapshot,
         error: err instanceof Error ? err.message : 'Failed to move task',
       });
+      throw err;
+    }
+  },
+
+  moveColumnOptimistic: async (columnId, newPosition) => {
+    const snapshot = cloneBoard(get().currentBoard);
+    if (!snapshot?.columns) return;
+
+    const next = cloneBoard(snapshot);
+    if (!next?.columns) return;
+
+    // Remove column from its current position
+    const oldIndex = next.columns.findIndex((c) => c.id === columnId);
+    if (oldIndex < 0) return;
+
+    const [col] = next.columns.splice(oldIndex, 1);
+
+    // Insert at new position
+    next.columns.splice(newPosition, 0, col);
+
+    // Reindex all columns
+    next.columns.forEach((c, i) => {
+      c.position = i;
+    });
+
+    set({ currentBoard: next, error: null });
+
+    try {
+      await apiFetch<void>(`/api/columns/${columnId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ position: col.position }),
+      });
+    } catch (err) {
+      set({
+        currentBoard: snapshot,
+        error: err instanceof Error ? err.message : 'Failed to move column',
+      });
+      throw err;
     }
   },
 }));
