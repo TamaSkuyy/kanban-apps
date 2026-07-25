@@ -2,13 +2,29 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { Board } from '../../types';
 import { useKanbanStore } from '../lib/store';
 import ConfirmModal from './ConfirmModal';
 
 export default function BoardCard({ board }: { board: Board }) {
-  const { deleteBoard } = useKanbanStore();
+  const { deleteBoard, createBoard } = useKanbanStore();
   const [confirming, setConfirming] = useState(false);
+
+  async function handleDelete() {
+    setConfirming(false);
+    const boardTitle = board.title;
+    await deleteBoard(board.id);
+    toast.success(`Board "${boardTitle}" deleted`, {
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          void createBoard(boardTitle);
+        },
+      },
+      duration: 5000,
+    });
+  }
 
   return (
     <>
@@ -30,10 +46,7 @@ export default function BoardCard({ board }: { board: Board }) {
         message={`Are you sure you want to delete "${board.title}"? This will permanently delete all columns and tasks in this board.`}
         confirmLabel="Delete Board"
         variant="danger"
-        onConfirm={() => {
-          void deleteBoard(board.id);
-          setConfirming(false);
-        }}
+        onConfirm={() => void handleDelete()}
         onCancel={() => setConfirming(false)}
       />
     </>

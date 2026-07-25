@@ -55,7 +55,7 @@ function TaskModalForm({
   standalone: boolean;
 }) {
   const router = useRouter();
-  const { updateTask, deleteTask } = useKanbanStore();
+  const { updateTask, deleteTask, createTask } = useKanbanStore();
   const [description, setDescription] = useState(task.description);
   const [assignee, setAssignee] = useState(task.assignee);
   const [dueDate, setDueDate] = useState(task.due_date?.slice(0, 10) ?? '');
@@ -73,9 +73,19 @@ function TaskModalForm({
   }
 
   async function onDelete() {
+    const taskTitle = task.title;
+    const columnId = task.column_id;
     await deleteTask(task.id);
     setConfirmingDelete(false);
-    toast.success('Task deleted');
+    toast.success(`Task "${taskTitle}" deleted`, {
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          void createTask(columnId, taskTitle);
+        },
+      },
+      duration: 5000,
+    });
     if (!standalone) router.back();
     else router.push(`/boards/${boardId}`);
   }

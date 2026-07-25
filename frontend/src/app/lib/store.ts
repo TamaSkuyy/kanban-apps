@@ -20,6 +20,7 @@ type KanbanState = {
   error: string | null;
   fetchBoards: () => Promise<void>;
   createBoard: (title: string) => Promise<void>;
+  updateBoard: (boardId: string, title: string) => Promise<void>;
   deleteBoard: (boardId: string) => Promise<void>;
   fetchBoard: (boardId: string) => Promise<void>;
   createTask: (columnId: string, title: string) => Promise<void>;
@@ -61,6 +62,25 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
       set((state) => ({ boards: [board, ...state.boards] }));
     } catch (err) {
       set({ error: err instanceof Error ? err.message : 'Failed to create board' });
+    }
+  },
+
+  updateBoard: async (boardId: string, title: string) => {
+    const prev = get().currentBoard;
+    if (prev) {
+      set({ currentBoard: { ...prev, title }, error: null });
+    }
+    try {
+      await apiFetch<void>(`/api/boards/${boardId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ title }),
+      });
+      set((state) => ({
+        boards: state.boards.map((b) => (b.id === boardId ? { ...b, title } : b)),
+      }));
+    } catch (err) {
+      if (prev) set({ currentBoard: prev });
+      set({ error: err instanceof Error ? err.message : 'Failed to update board' });
     }
   },
 
