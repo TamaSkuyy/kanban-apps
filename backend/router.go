@@ -44,10 +44,21 @@ type Task struct {
 	Description string     `json:"description"`
 	Assignee    string     `json:"assignee"`
 	DueDate     *time.Time `json:"due_date"`
+	Labels      []string   `json:"labels"`
 	Position    int        `json:"position"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
+
+type Activity struct {
+	ID        string    `json:"id"`
+	BoardID   string    `json:"board_id"`
+	UserID    string    `json:"user_id"`
+	Action    string    `json:"action"`
+	Detail    string    `json:"detail"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 
 type rateLimiter struct {
 	mu       sync.Mutex
@@ -64,6 +75,17 @@ type visitor struct {
 type sseHub struct {
 	mu       sync.RWMutex
 	watchers map[string]map[chan []byte]struct{}
+}
+
+func scanLabels(b []byte) []string {
+	var labels []string
+	if len(b) > 0 {
+		json.Unmarshal(b, &labels)
+	}
+	if labels == nil {
+		labels = []string{}
+	}
+	return labels
 }
 
 func newSSEHub() *sseHub {
@@ -181,6 +203,7 @@ func NewRouter(db *pgxpool.Pool) *gin.Engine {
 	protected.PUT("/boards/:id", s.updateBoard)
 	protected.DELETE("/boards/:id", s.deleteBoard)
 	protected.GET("/boards/:id/events", s.boardEvents)
+		protected.GET("/boards/:id/activities", s.getActivities)
 
 	protected.PUT("/tasks/:id", s.updateTask)
 	protected.DELETE("/tasks/:id", s.deleteTask)
@@ -485,14 +508,15 @@ func (s *server) createTask(c *gin.Context) {
 	err = s.db.QueryRow(c.Request.Context(), `
 		INSERT INTO tasks (column_id, title, position)
 		VALUES ($1, $2, COALESCE((SELECT MAX(position) + 1 FROM tasks WHERE column_id = $1), 0))
-		RETURNING id, column_id, title, description, assignee, due_date, position, created_at, updated_at
+			RETURNING id, column_id, title, description, assignee, due_date, labels, position, created_at, updated_at
 	`, c.Param("colId"), req.Title).Scan(
 		&task.ID,
 		&task.ColumnID,
 		&task.Title,
 		&task.Description,
 		&task.Assignee,
-		&task.DueDate,
+			&task.DueDate,
+			&task.Labels,
 		&task.Position,
 		&task.CreatedAt,
 		&task.UpdatedAt,
@@ -502,6 +526,7 @@ func (s *server) createTask(c *gin.Context) {
 		return
 	}
 	s.publishBoardEvent(boardID, "task.created", task)
+		s.logActivity(c.Request.Context(), boardID, c.GetString("userID"), "task.created", task.Title)
 	c.JSON(http.StatusCreated, task)
 }
 
@@ -547,6 +572,7 @@ func (s *server) updateTask(c *gin.Context) {
 		Assignee    *string    `json:"assignee"`
 		ColumnID    *string    `json:"column_id"`
 		DueDate     *time.Time `json:"due_date"`
+		Labels      []string   `json:"labels"`
 		Position    *int       `json:"position"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -557,7 +583,7 @@ func (s *server) updateTask(c *gin.Context) {
 	var current Task
 	var boardID string
 	err := s.db.QueryRow(c.Request.Context(), `
-		SELECT t.id, t.column_id, t.title, t.description, t.assignee, t.due_date, t.position, t.created_at, t.updated_at, b.id
+			SELECT t.id, t.column_id, t.title, t.description, t.assignee, t.due_date, t.labels, t.position, t.created_at, t.updated_at, b.id
 		FROM tasks t
 		JOIN columns c ON c.id = t.column_id
 		JOIN boards b ON b.id = c.board_id
@@ -568,7 +594,8 @@ func (s *server) updateTask(c *gin.Context) {
 		&current.Title,
 		&current.Description,
 		&current.Assignee,
-		&current.DueDate,
+			&current.DueDate,
+			&current.Labels,
 		&current.Position,
 		&current.CreatedAt,
 		&current.UpdatedAt,
@@ -610,19 +637,21 @@ func (s *server) updateTask(c *gin.Context) {
 			description = $2,
 			assignee = $3,
 			column_id = $4,
-			due_date = $5,
-			position = $6,
+				labels = $6,
+				due_date = $7,
 			updated_at = now()
-		WHERE id = $7
-	`, current.Title, current.Description, current.Assignee, current.ColumnID, current.DueDate, current.Position, current.ID)
+			WHERE id = $9
+		`, current.Title, current.Description, current.Assignee, current.ColumnID, current.DueDate, current.Labels, current.Position, current.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update task"})
 		return
 	}
 	if current.ColumnID != originalColumnID {
 		s.publishBoardEvent(boardID, "task.moved", current)
+		s.logActivity(c.Request.Context(), boardID, c.GetString("userID"), "task.moved", current.Title)
 	} else {
 		s.publishBoardEvent(boardID, "task.updated", current)
+		s.logActivity(c.Request.Context(), boardID, c.GetString("userID"), "task.updated", current.Title)
 	}
 	c.Status(http.StatusNoContent)
 }
@@ -647,6 +676,8 @@ func (s *server) deleteTask(c *gin.Context) {
 		return
 	}
 	s.publishBoardEvent(boardID, "task.deleted", map[string]string{"task_id": c.Param("id")})
+	taskID := c.Param("id")
+	s.logActivity(c.Request.Context(), boardID, c.GetString("userID"), "task.deleted", taskID)
 	c.Status(http.StatusNoContent)
 }
 
@@ -685,6 +716,46 @@ type boardEvent struct {
 	Type    string      `json:"type"`
 	BoardID string      `json:"board_id"`
 	Data    interface{} `json:"data,omitempty"`
+}
+
+
+func (s *server) logActivity(ctx context.Context, boardID, userID, action, detail string) {
+	_, _ = s.db.Exec(ctx, `
+		INSERT INTO activities (board_id, user_id, action, detail)
+		VALUES ($1, $2, $3, $4)
+	`, boardID, userID, action, detail)
+}
+
+func (s *server) getActivities(c *gin.Context) {
+	boardID := c.Param("id")
+	if err := s.ensureBoardOwnership(c.Request.Context(), c.GetString("userID"), boardID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "board not found"})
+		return
+	}
+
+	rows, err := s.db.Query(c.Request.Context(), `
+		SELECT id, board_id, user_id, action, detail, created_at
+		FROM activities
+		WHERE board_id = $1
+		ORDER BY created_at DESC
+		LIMIT 50
+	`, boardID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch activities"})
+		return
+	}
+	defer rows.Close()
+
+	activities := []Activity{}
+	for rows.Next() {
+		var a Activity
+		if err := rows.Scan(&a.ID, &a.BoardID, &a.UserID, &a.Action, &a.Detail, &a.CreatedAt); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse activity"})
+			return
+		}
+		activities = append(activities, a)
+	}
+	c.JSON(http.StatusOK, gin.H{"activities": activities})
 }
 
 func (s *server) publishBoardEvent(boardID, eventType string, data interface{}) {
@@ -740,7 +811,7 @@ func (s *server) getBoardData(ctx context.Context, userID string, boardID string
 		SELECT
 			c.id, c.board_id, c.title, c.position, c.created_at,
 			t.id, t.column_id, t.title, t.description, t.assignee,
-			t.due_date, t.position,
+				t.due_date, t.labels, t.position,
 			t.created_at, t.updated_at
 		FROM columns c
 		LEFT JOIN tasks t ON t.column_id = c.id
@@ -760,6 +831,7 @@ func (s *server) getBoardData(ctx context.Context, userID string, boardID string
 		var colPosition int
 		var colCreatedAt time.Time
 		var taskID, taskColumnID, taskTitle, taskDescription, taskAssignee *string
+			var taskLabels []byte
 		var taskDueDate *time.Time
 		var taskPosition *int
 		var taskCreatedAt, taskUpdatedAt *time.Time
@@ -767,7 +839,7 @@ func (s *server) getBoardData(ctx context.Context, userID string, boardID string
 		if err := rows.Scan(
 			&colID, &colBoardID, &colTitle, &colPosition, &colCreatedAt,
 			&taskID, &taskColumnID, &taskTitle, &taskDescription, &taskAssignee,
-			&taskDueDate, &taskPosition, &taskCreatedAt, &taskUpdatedAt,
+				&taskDueDate, &taskLabels, &taskPosition, &taskCreatedAt, &taskUpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -795,6 +867,7 @@ func (s *server) getBoardData(ctx context.Context, userID string, boardID string
 				Description: *taskDescription,
 				Assignee:    *taskAssignee,
 				DueDate:     taskDueDate,
+				Labels:      scanLabels(taskLabels),
 			}
 			if taskID != nil {
 				t.ID = *taskID

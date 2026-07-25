@@ -12,6 +12,7 @@ export default function SortableTaskCard({
   onDelete,
   isSelected,
   onSelect,
+  searchQuery,
 }: {
   boardId: string;
   task: Task;
@@ -19,6 +20,7 @@ export default function SortableTaskCard({
   onDelete?: () => void;
   isSelected?: boolean;
   onSelect?: () => void;
+  searchQuery?: string;
 }) {
   const {
     attributes,
@@ -41,7 +43,7 @@ export default function SortableTaskCard({
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
       <div onClick={onSelect}>
-        <TaskCard boardId={boardId} task={task} onEdit={onEdit} onDelete={onDelete} isSelected={isSelected} />
+        <TaskCard boardId={boardId} task={task} onEdit={onEdit} onDelete={onDelete} isSelected={isSelected} searchQuery={searchQuery} />
       </div>
     </div>
   );

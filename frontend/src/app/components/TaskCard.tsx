@@ -26,6 +26,15 @@ function getDueDateInfo(dueDate: string | null): { label: string; color: string 
   return { label: dueDay.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), color: 'bg-green-100 text-green-700' };
 }
 
+const LABEL_COLORS: Record<string, string> = {
+  bug: '#ef4444',
+  feature: '#22c55e',
+  urgent: '#f97316',
+  design: '#a855f7',
+  improvement: '#3b82f6',
+  docs: '#64748b',
+};
+
 const AVATAR_COLORS = [
   'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-pink-500',
   'bg-indigo-500', 'bg-teal-500', 'bg-orange-500', 'bg-cyan-500',
@@ -37,19 +46,41 @@ function avatarColor(name: string): string {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
+function highlightText(text: string, query: string): React.ReactNode {
+  if (!query.trim()) return text;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`(${escaped})`, 'gi');
+  const parts = text.split(regex);
+  return parts.map((part, i) =>
+    regex.test(part) ? (
+      <mark key={i} className="rounded-sm bg-yellow-200 px-0.5 text-inherit">
+        {part}
+      </mark>
+    ) : (
+      part
+    )
+  );
+}
+
 export default function TaskCard({
   boardId,
   task,
   onEdit,
   onDelete,
   isSelected,
+  searchQuery,
 }: {
   boardId: string;
   task: Task;
   onEdit?: () => void;
   onDelete?: () => void;
   isSelected?: boolean;
+  searchQuery?: string;
 }) {
+  const isSearching = searchQuery && searchQuery.trim().length > 0;
+  const matchesSearch = isSearching
+    ? task.title.toLowerCase().includes(searchQuery!.toLowerCase())
+    : true;
   const { updateTask } = useKanbanStore();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(task.title);
@@ -81,9 +112,9 @@ export default function TaskCard({
 
   return (
     <div
-      className={`group relative rounded border bg-white p-2 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 ${
+      className={`group relative rounded border bg-white p-2 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100 ${
         isSelected ? 'ring-2 ring-blue-400 border-blue-400' : ''
-      }`}
+      } ${isSearching && !matchesSearch ? 'opacity-30' : ''}`}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
@@ -129,13 +160,32 @@ export default function TaskCard({
         />
       ) : (
         <button className="w-full pr-10 text-left text-sm" onDoubleClick={() => setEditing(true)}>
-          {task.title}
+          {isSearching ? highlightText(task.title, searchQuery!) : task.title}
         </button>
       )}
 
       {/* Description preview */}
       {descPreview && (
         <p className="mt-1 text-xs leading-relaxed text-slate-400 line-clamp-2">{descPreview}</p>
+      )}
+
+      {/* Labels */}
+      {(task.labels || []).length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {(task.labels || []).map((label) => (
+            <span
+              key={label}
+              className="inline-block rounded-full px-2 py-0.5 text-[10px] font-medium"
+              style={{
+                backgroundColor: (LABEL_COLORS as Record<string, string>)[label] + '20' || '#e2e8f0',
+                color: (LABEL_COLORS as Record<string, string>)[label] || '#64748b',
+                border: `1px solid ${(LABEL_COLORS as Record<string, string>)[label] + '40' || '#cbd5e1'}`,
+              }}
+            >
+              {label}
+            </span>
+          ))}
+        </div>
       )}
 
       {/* Bottom row: badges + detail link */}

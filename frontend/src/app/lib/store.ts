@@ -9,6 +9,7 @@ type TaskPatch = {
   description?: string;
   assignee?: string;
   due_date?: string | null;
+  labels?: string[];
   column_id?: string;
   position?: number;
 };

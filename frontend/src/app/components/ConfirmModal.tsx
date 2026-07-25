@@ -49,23 +49,23 @@ export default function ConfirmModal({
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl"
+        className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl dark:bg-slate-800"
         onClick={(e) => e.stopPropagation()}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-title"
         aria-describedby="confirm-message"
       >
-        <h2 id="confirm-title" className="text-lg font-semibold text-slate-900">
+        <h2 id="confirm-title" className="text-lg font-semibold text-slate-900 dark:text-white">
           {title}
         </h2>
-        <p id="confirm-message" className="mt-2 text-sm text-slate-600">
+        <p id="confirm-message" className="mt-2 text-sm text-slate-600 dark:text-slate-300">
           {message}
         </p>
         <div className="mt-5 flex justify-end gap-3">
           <button
             ref={cancelRef}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
             onClick={onCancel}
           >
             Cancel

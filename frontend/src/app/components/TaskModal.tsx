@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import ReactMarkdown from 'react-markdown';
 import { Task } from '../../types';
 import { useKanbanStore } from '../lib/store';
 import ConfirmModal from './ConfirmModal';
@@ -60,6 +61,17 @@ function TaskModalForm({
   const [assignee, setAssignee] = useState(task.assignee);
   const [dueDate, setDueDate] = useState(task.due_date?.slice(0, 10) ?? '');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [previewDesc, setPreviewDesc] = useState(false);
+  const [labels, setLabels] = useState<string[]>(task.labels || []);
+
+  const AVAILABLE_LABELS = [
+    { name: 'bug', color: '#ef4444' },
+    { name: 'feature', color: '#22c55e' },
+    { name: 'urgent', color: '#f97316' },
+    { name: 'design', color: '#a855f7' },
+    { name: 'improvement', color: '#3b82f6' },
+    { name: 'docs', color: '#64748b' },
+  ];
 
   async function onSave(e: FormEvent) {
     e.preventDefault();
@@ -67,6 +79,7 @@ function TaskModalForm({
       description,
       assignee,
       due_date: dueDate ? `${dueDate}T00:00:00Z` : null,
+      labels,
     });
     toast.success('Task updated');
     if (!standalone) router.back();
@@ -100,14 +113,31 @@ function TaskModalForm({
       )}
       <form className="space-y-3" onSubmit={onSave}>
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-500">Description</label>
-          <textarea
-            className="w-full rounded border p-2 text-sm"
-            rows={4}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Add a description..."
-          />
+          <div className="mb-1 flex items-center justify-between">
+            <label className="text-xs font-medium text-slate-500">Description</label>
+            {description && (
+              <button
+                type="button"
+                className="text-xs text-blue-600 hover:text-blue-800"
+                onClick={() => setPreviewDesc(!previewDesc)}
+              >
+                {previewDesc ? 'Edit' : 'Preview'}
+              </button>
+            )}
+          </div>
+          {previewDesc ? (
+            <div className="prose prose-sm max-w-none rounded border bg-white p-3 text-sm dark:prose-invert dark:bg-slate-700 dark:border-slate-600 min-h-[6rem]">
+              <ReactMarkdown>{description || '*No description*'}</ReactMarkdown>
+            </div>
+          ) : (
+            <textarea
+              className="w-full rounded border p-2 text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+              rows={4}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Add a description... (supports Markdown)"
+            />
+          )}
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
@@ -129,6 +159,32 @@ function TaskModalForm({
             />
           </div>
         </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-500">Labels</label>
+          <div className="flex flex-wrap gap-1.5">
+            {AVAILABLE_LABELS.map((lbl) => {
+              const active = labels.includes(lbl.name);
+              return (
+                <button
+                  key={lbl.name}
+                  type="button"
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                    active ? 'text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-400'
+                  }`}
+                  style={active ? { backgroundColor: lbl.color } : undefined}
+                  onClick={() => {
+                    setLabels((prev) =>
+                      prev.includes(lbl.name) ? prev.filter((l) => l !== lbl.name) : [...prev, lbl.name]
+                    );
+                  }}
+                >
+                  {lbl.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="flex justify-between gap-2 pt-2">
           <button
             type="button"

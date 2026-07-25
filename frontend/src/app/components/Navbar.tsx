@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { useTheme } from 'next-themes';
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -10,6 +11,7 @@ export default function Navbar() {
   const [tokenExists, setTokenExists] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const { theme, setTheme } = useTheme();
 
   useEffect(() => {
     setTokenExists(!!localStorage.getItem('token'));
@@ -26,12 +28,12 @@ export default function Navbar() {
   const navLinks = (
     <>
       {!tokenExists && pathname !== '/login' && (
-        <Link href="/login" className="text-sm font-medium text-slate-600 hover:text-slate-900" onClick={() => setMenuOpen(false)}>
+        <Link href="/login" className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white" onClick={() => setMenuOpen(false)}>
           Login
         </Link>
       )}
       {!tokenExists && pathname !== '/register' && (
-        <Link href="/register" className="text-sm font-medium text-slate-600 hover:text-slate-900" onClick={() => setMenuOpen(false)}>
+        <Link href="/register" className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white" onClick={() => setMenuOpen(false)}>
           Register
         </Link>
       )}
@@ -44,15 +46,26 @@ export default function Navbar() {
   );
 
   return (
-    <header className="border-b bg-white">
+    <header className="border-b bg-white dark:bg-slate-900 dark:border-slate-700">
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-3">
-        <Link href="/boards" className="text-lg font-semibold text-slate-900">
+        <Link href="/boards" className="text-lg font-semibold text-slate-900 dark:text-white">
           Kanban
         </Link>
 
         {/* Desktop nav */}
         <nav className="hidden items-center gap-4 sm:flex">
-          {mounted && navLinks}
+          {mounted && (
+            <>
+              {navLinks}
+              <button
+                className="rounded p-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                title="Toggle theme"
+              >
+                {theme === 'dark' ? '☀️' : '🌙'}
+              </button>
+            </>
+          )}
         </nav>
 
         {/* Mobile hamburger */}
@@ -75,7 +88,7 @@ export default function Navbar() {
 
       {/* Mobile dropdown */}
       {menuOpen && mounted && (
-        <div className="border-t bg-white px-4 py-3 sm:hidden">
+        <div className="border-t bg-white px-4 py-3 sm:hidden dark:bg-slate-900 dark:border-slate-700">
           <nav className="flex flex-col gap-3">{navLinks}</nav>
         </div>
       )}

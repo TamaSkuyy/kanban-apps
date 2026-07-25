@@ -6,6 +6,7 @@ import KanbanBoard from '../../components/KanbanBoard';
 import { useKanbanStore } from '../../lib/store';
 import { useBoardEvents } from '../../lib/useBoardEvents';
 import { SkeletonBoardDetail } from '../../components/Skeletons';
+import ActivityLog from '../../components/ActivityLog';
 
 export default function BoardDetailPage() {
   const params = useParams<{ boardId: string }>();
@@ -14,6 +15,7 @@ export default function BoardDetailPage() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const THEME_COLORS = [
     { label: 'None', value: null },
@@ -122,7 +124,19 @@ export default function BoardDetailPage() {
         </div>
       </div>
 
-      <KanbanBoard />
+      {/* Search */}
+      <div className="mb-4">
+        <input
+          className="w-full rounded-lg border bg-white px-3 py-2 text-sm sm:w-72"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search tasks..."
+        />
+      </div>
+
+      <ActivityLog boardId={boardId} />
+
+      <KanbanBoard searchQuery={searchQuery} />
     </section>
   );
 }

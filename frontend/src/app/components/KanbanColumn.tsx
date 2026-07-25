@@ -54,12 +54,12 @@ export default function KanbanColumn({
       ref={setDroppableRef}
       style={style}
       data-kanban-column
-      className={`flex w-[280px] shrink-0 flex-col rounded-lg bg-slate-100 p-3 transition-colors sm:w-auto sm:shrink ${
-        isOver ? 'ring-2 ring-blue-400 bg-blue-50' : ''
+      className={`flex w-[280px] shrink-0 flex-col rounded-lg bg-slate-100 p-3 transition-colors sm:w-auto sm:shrink dark:bg-slate-800 ${
+        isOver ? 'ring-2 ring-blue-400 bg-blue-50 dark:bg-blue-900/30' : ''
       } ${isDragging ? 'opacity-50' : ''}`}
     >
       <div ref={setSortableRef} {...attributes} {...listeners}>
-        <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-600 cursor-grab active:cursor-grabbing">
+        <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-600 cursor-grab active:cursor-grabbing dark:text-slate-300">
           {column.title}
           {taskCount > 0 && (
             <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-300 px-1.5 text-xs font-medium text-slate-700">
@@ -72,16 +72,16 @@ export default function KanbanColumn({
       <div className="min-h-[4rem] flex-1">
         {children}
         {taskCount === 0 && (
-          <div className="mt-2 rounded-lg border border-dashed border-slate-300 p-4 text-center">
-            <p className="text-xs text-slate-400">No tasks yet</p>
-            <p className="text-xs text-slate-300">Drag a card here or add one below</p>
+          <div className="mt-2 rounded-lg border border-dashed border-slate-300 p-4 text-center dark:border-slate-600">
+            <p className="text-xs text-slate-400 dark:text-slate-500">No tasks yet</p>
+            <p className="text-xs text-slate-300 dark:text-slate-600">Drag a card here or add one below</p>
           </div>
         )}
       </div>
 
       <form onSubmit={onCreate} className="mt-3 flex gap-2">
         <input
-          className="w-full rounded border bg-white px-2 py-1.5 text-sm"
+          className="w-full rounded border bg-white px-2 py-1.5 text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white dark:placeholder:text-slate-400"
           value={taskTitle}
           onChange={(e) => setTaskTitle(e.target.value)}
           placeholder="Add a task..."

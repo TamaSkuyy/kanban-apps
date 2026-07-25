@@ -5,6 +5,7 @@ export interface Task {
   description: string;
   assignee: string;
   due_date: string | null;
+  labels: string[];
   position: number;
   created_at: string;
   updated_at: string;

@@ -27,7 +27,7 @@ import DragOverlayContent from './DragOverlayContent';
 import ConfirmModal from './ConfirmModal';
 import ShortcutsHelp from './ShortcutsHelp';
 
-export default function KanbanBoard() {
+export default function KanbanBoard({ searchQuery = '' }: { searchQuery?: string }) {
   const router = useRouter();
   const { currentBoard, moveTaskOptimistic, moveColumnOptimistic, deleteTask, createTask } = useKanbanStore();
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -190,6 +190,7 @@ export default function KanbanBoard() {
                         onDelete={() => setDeletingTask({ id: task.id, title: task.title, columnId: task.column_id })}
                         isSelected={selectedTaskId === task.id}
                         onSelect={() => setSelectedTaskId(selectedTaskId === task.id ? null : task.id)}
+                        searchQuery={searchQuery}
                       />
                     ))}
                   </div>
