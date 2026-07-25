@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { History } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 
 interface Activity {
@@ -63,28 +64,33 @@ export default function ActivityLog({ boardId }: { boardId: string }) {
   return (
     <>
       <button
-        className="mb-4 text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+        className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium shadow-sm transition-all duration-200 ${
+          open
+            ? 'bg-emerald-500 text-white shadow-emerald-200 dark:shadow-none'
+            : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-700'
+        }`}
         onClick={() => setOpen(!open)}
       >
-        {open ? 'Hide Activity' : 'Show Activity'} 📜
+        <History className="h-3.5 w-3.5" />
+        {open ? 'Hide Activity' : 'Activity'}
       </button>
 
       {open && (
-        <div className="mb-6 max-h-64 overflow-y-auto rounded-lg border bg-white p-3 dark:bg-slate-800 dark:border-slate-700">
+        <div className="w-full rounded-2xl border bg-white p-4 shadow-sm dark:bg-slate-800 dark:border-slate-700">
           {activities.length === 0 && (
-            <p className="py-3 text-center text-xs text-slate-400">No activity yet.</p>
+            <p className="py-4 text-center text-xs text-slate-400">No activity yet — start moving tasks! 🚀</p>
           )}
-          <ul className="space-y-1.5">
+          <ul className="max-h-64 space-y-1 overflow-y-auto">
             {activities.map((a) => {
               const { icon, text } = actionLabel(a.action);
               return (
-                <li key={a.id} className="flex items-center gap-2 text-sm">
-                  <span className="shrink-0">{icon}</span>
+                <li key={a.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                  <span className="shrink-0 text-xs">{icon}</span>
                   <span className="text-slate-600 dark:text-slate-300">
-                    <strong className="font-medium text-slate-800 dark:text-slate-100">{a.detail}</strong>{' '}
-                    {text}
+                    <strong className="font-semibold text-slate-800 dark:text-slate-100">{a.detail}</strong>{' '}
+                    <span className="text-slate-400">{text}</span>
                   </span>
-                  <span className="ml-auto shrink-0 text-xs text-slate-400" suppressHydrationWarning>
+                  <span className="ml-auto shrink-0 text-[11px] text-slate-400" suppressHydrationWarning>
                     {mounted ? timeAgo(a.created_at) : ''}
                   </span>
                 </li>

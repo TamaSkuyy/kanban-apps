@@ -2,9 +2,11 @@
 
 import Link from 'next/link';
 import { KeyboardEvent, useEffect, useMemo, useState } from 'react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { Task } from '../../types';
 import { useKanbanStore } from '../lib/store';
 
+/* ── Due date helpers ─────────────────────────────────────────── */
 function getDueDateInfo(dueDate: string | null): { label: string; color: string } | null {
   if (!dueDate) return null;
   const due = new Date(dueDate);
@@ -18,14 +20,21 @@ function getDueDateInfo(dueDate: string | null): { label: string; color: string 
   const diffDays = Math.ceil((dueDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
   if (diffDays < 0) {
-    return { label: 'Overdue', color: 'bg-red-100 text-red-700' };
+    return { label: 'Overdue', color: 'bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400' };
   }
   if (diffDays <= 7) {
-    return { label: dueDay.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), color: 'bg-yellow-100 text-yellow-700' };
+    return {
+      label: dueDay.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      color: 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400',
+    };
   }
-  return { label: dueDay.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), color: 'bg-green-100 text-green-700' };
+  return {
+    label: dueDay.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+  };
 }
 
+/* ── Label colors ─────────────────────────────────────────────── */
 const LABEL_COLORS: Record<string, string> = {
   bug: '#ef4444',
   feature: '#22c55e',
@@ -53,7 +62,7 @@ function highlightText(text: string, query: string): React.ReactNode {
   const parts = text.split(regex);
   return parts.map((part, i) =>
     regex.test(part) ? (
-      <mark key={i} className="rounded-sm bg-yellow-200 px-0.5 text-inherit">
+      <mark key={i} className="rounded-sm bg-yellow-200 px-0.5 text-inherit dark:bg-yellow-800 dark:text-yellow-100">
         {part}
       </mark>
     ) : (
@@ -62,6 +71,13 @@ function highlightText(text: string, query: string): React.ReactNode {
   );
 }
 
+/* ── Card accent color from labels ────────────────────────────── */
+function cardAccent(labels: string[]): string | undefined {
+  const firstLabel = labels.find((l) => l in LABEL_COLORS);
+  return firstLabel ? LABEL_COLORS[firstLabel] : undefined;
+}
+
+/* ── Main component ───────────────────────────────────────────── */
 export default function TaskCard({
   boardId,
   task,
@@ -87,10 +103,12 @@ export default function TaskCard({
   const [hover, setHover] = useState(false);
   const [mounted, setMounted] = useState(false);
   const dueInfo = useMemo(() => (mounted ? getDueDateInfo(task.due_date) : null), [mounted, task.due_date]);
+  const accent = cardAccent(task.labels || []);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
   const descPreview = task.description
     ? task.description.length > 80
       ? task.description.slice(0, 80) + '…'
@@ -117,104 +135,113 @@ export default function TaskCard({
 
   return (
     <div
-      className={`group relative rounded border bg-white p-2 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100 ${
-        isSelected ? 'ring-2 ring-blue-400 border-blue-400' : ''
+      className={`group relative overflow-hidden rounded-xl bg-white p-3 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md dark:bg-slate-700 dark:text-slate-100 ${
+        isSelected ? 'ring-2 ring-emerald-400' : ''
       } ${isSearching && !matchesSearch ? 'opacity-30' : ''}`}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      {/* Hover action buttons */}
-      {hover && !editing && (
-        <div className="absolute right-1 top-1 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-          {onEdit && (
-            <button
-              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-              onClick={onEdit}
-              title="Edit task"
-            >
-              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-            </button>
-          )}
-          {onDelete && (
-            <button
-              className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
-              onClick={onDelete}
-              title="Delete task"
-            >
-              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
-          )}
-        </div>
+      {/* Colored left accent bar */}
+      {accent && (
+        <div
+          className="absolute left-0 top-0 h-full w-1"
+          style={{ backgroundColor: accent }}
+        />
       )}
+
+      {/* Hover action buttons */}
+      <div className="absolute right-1 top-1 flex gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+        {onEdit && (
+          <button
+            className="rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-slate-600 dark:hover:text-slate-200"
+            onClick={onEdit}
+            title="Edit task"
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
+        )}
+        {onDelete && (
+          <button
+            className="rounded-lg p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950 dark:hover:text-red-400"
+            onClick={onDelete}
+            title="Delete task"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        )}
+      </div>
 
       {/* Title */}
-      {editing ? (
-        <input
-          autoFocus
-          className="w-full rounded border px-2 py-1 text-sm"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => {
-            void save();
-          }}
-          onKeyDown={onKeyDown}
-        />
-      ) : (
-        <button className="w-full pr-10 text-left text-sm" onDoubleClick={() => setEditing(true)}>
-          {isSearching ? highlightText(task.title, searchQuery!) : task.title}
-        </button>
-      )}
+      <div className={accent ? 'pl-2' : ''}>
+        {editing ? (
+          <input
+            autoFocus
+            className="w-full rounded-lg border bg-white px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-emerald-400 dark:bg-slate-600 dark:border-slate-500"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={() => void save()}
+            onKeyDown={onKeyDown}
+          />
+        ) : (
+          <button
+            className="w-full pr-10 text-left text-sm font-medium text-slate-700 dark:text-slate-200"
+            onDoubleClick={() => setEditing(true)}
+          >
+            {isSearching ? highlightText(task.title, searchQuery!) : task.title}
+          </button>
+        )}
 
-      {/* Description preview */}
-      {descPreview && (
-        <p className="mt-1 text-xs leading-relaxed text-slate-400 line-clamp-2">{descPreview}</p>
-      )}
+        {/* Description preview */}
+        {descPreview && (
+          <p className="mt-1 text-xs leading-relaxed text-gray-400 line-clamp-2 dark:text-gray-500">
+            {descPreview}
+          </p>
+        )}
 
-      {/* Labels */}
-      {(task.labels || []).length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          {(task.labels || []).map((label) => (
-            <span
-              key={label}
-              className="inline-block rounded-full px-2 py-0.5 text-[10px] font-medium"
-              style={{
-                backgroundColor: (LABEL_COLORS as Record<string, string>)[label] + '20' || '#e2e8f0',
-                color: (LABEL_COLORS as Record<string, string>)[label] || '#64748b',
-                border: `1px solid ${(LABEL_COLORS as Record<string, string>)[label] + '40' || '#cbd5e1'}`,
-              }}
-            >
-              {label}
-            </span>
-          ))}
-        </div>
-      )}
+        {/* Labels */}
+        {(task.labels || []).length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {(task.labels || []).map((label) => (
+              <span
+                key={label}
+                className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                style={{
+                  backgroundColor: (LABEL_COLORS as Record<string, string>)[label] + '20' || '#e2e8f0',
+                  color: (LABEL_COLORS as Record<string, string>)[label] || '#64748b',
+                }}
+              >
+                {label}
+              </span>
+            ))}
+          </div>
+        )}
 
-      {/* Bottom row: badges + detail link */}
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5">
-          {dueInfo && (
-            <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${dueInfo.color}`}>
-              {dueInfo.label}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5">
-          {task.assignee ? (
-            <span
-              className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold text-white ${avatarColor(task.assignee)}`}
-              title={task.assignee}
-            >
-              {task.assignee.charAt(0).toUpperCase()}
-            </span>
-          ) : (
-            <Link href={`/boards/${boardId}/tasks/${task.id}`} className="text-xs text-blue-600 hover:text-blue-800">
-              Detail
-            </Link>
-          )}
+        {/* Footer: date + assignee */}
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            {dueInfo && (
+              <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${dueInfo.color}`}>
+                {dueInfo.label}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            {task.assignee ? (
+              <span
+                className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold text-white ${avatarColor(task.assignee)}`}
+                title={task.assignee}
+              >
+                {task.assignee.charAt(0).toUpperCase()}
+              </span>
+            ) : (
+              <Link
+                href={`/boards/${boardId}/tasks/${task.id}`}
+                className="text-[11px] font-medium text-emerald-600 transition hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+              >
+                Detail
+              </Link>
+            )}
+          </div>
         </div>
       </div>
     </div>
