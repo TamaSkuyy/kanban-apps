@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from 'sonner';
-import Navbar from './components/Navbar';
+import AppShell from './components/AppShell';
 import OfflineBanner from './components/OfflineBanner';
 import ErrorBoundary from './components/ErrorBoundary';
 import ThemeProvider from './components/ThemeProvider';
@@ -19,8 +19,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <ThemeProvider>
           <ErrorBoundary>
             <OfflineBanner />
-            <Navbar />
-            <main className="mx-auto w-full max-w-7xl px-4 py-6">{children}</main>
+            <AppShell>{children}</AppShell>
           </ErrorBoundary>
         </ThemeProvider>
       </body>
