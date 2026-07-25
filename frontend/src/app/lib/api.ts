@@ -11,6 +11,17 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     cache: 'no-store',
   });
 
+  if (response.status === 401) {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('token');
+      // Dynamic import to avoid bundling sonner server-side issues — toast works client-side
+      const { toast } = await import('sonner');
+      toast.error('Session expired. Please log in again.');
+      window.location.href = '/login';
+    }
+    throw new Error('Unauthorized');
+  }
+
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
     try {
