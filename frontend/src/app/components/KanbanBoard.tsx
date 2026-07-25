@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   DndContext,
   DragEndEvent,
@@ -18,15 +19,22 @@ import {
 } from '@dnd-kit/sortable';
 import { toast } from 'sonner';
 import { useKanbanStore } from '../lib/store';
+import { useKeyboardShortcuts } from '../lib/useKeyboardShortcuts';
 import { findColumnByTaskId, getTaskPosition } from '../lib/dnd-hooks';
 import KanbanColumn from './KanbanColumn';
 import SortableTaskCard from './SortableTaskCard';
 import DragOverlayContent from './DragOverlayContent';
+import ConfirmModal from './ConfirmModal';
+import ShortcutsHelp from './ShortcutsHelp';
 
 export default function KanbanBoard() {
-  const { currentBoard, moveTaskOptimistic, moveColumnOptimistic } = useKanbanStore();
+  const router = useRouter();
+  const { currentBoard, moveTaskOptimistic, moveColumnOptimistic, deleteTask, createTask } = useKanbanStore();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeType, setActiveType] = useState<'task' | 'column' | null>(null);
+  const [deletingTask, setDeletingTask] = useState<{ id: string; title: string; columnId: string } | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -103,6 +111,55 @@ export default function KanbanBoard() {
     }
   }, [currentBoard, moveTaskOptimistic, moveColumnOptimistic]);
 
+  async function handleTaskDelete() {
+    if (!deletingTask) return;
+    const { id, title, columnId } = deletingTask;
+    setDeletingTask(null);
+    await deleteTask(id);
+    toast.success(`Task "${title}" deleted`, {
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          void createTask(columnId, title);
+        },
+      },
+      duration: 5000,
+    });
+  }
+
+  useKeyboardShortcuts((action) => {
+    switch (action) {
+      case 'new-task': {
+        // Focus the first column's "Add a task..." input
+        const firstInput = document.querySelector<HTMLInputElement>(
+          '[data-kanban-column] input[placeholder="Add a task..."]'
+        );
+        firstInput?.focus();
+        break;
+      }
+      case 'edit-task':
+        if (selectedTaskId) {
+          router.push(`/boards/${currentBoard?.id}/tasks/${selectedTaskId}`);
+        }
+        break;
+      case 'delete-task':
+        if (selectedTaskId && currentBoard?.columns) {
+          const col = findColumnByTaskId(currentBoard, selectedTaskId);
+          const task = col?.tasks.find((t) => t.id === selectedTaskId);
+          if (task) {
+            setDeletingTask({ id: task.id, title: task.title, columnId: task.column_id });
+          }
+        }
+        break;
+      case 'close-modal':
+        setSelectedTaskId(null);
+        break;
+      case 'show-help':
+        setShortcutsOpen(true);
+        break;
+    }
+  });
+
   if (!currentBoard?.columns) return null;
 
   const columnIds = currentBoard.columns.map((c) => c.id);
@@ -123,9 +180,17 @@ export default function KanbanBoard() {
               <div key={column.id} className="snap-center md:snap-none">
               <KanbanColumn key={column.id} column={column}>
                 <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-                  <div className="space-y-2">
+                  <div className="space-y-2 column-task-list">
                     {tasks.map((task) => (
-                      <SortableTaskCard key={task.id} boardId={currentBoard.id} task={task} />
+                      <SortableTaskCard
+                        key={task.id}
+                        boardId={currentBoard.id}
+                        task={task}
+                        onEdit={() => router.push(`/boards/${currentBoard.id}/tasks/${task.id}`)}
+                        onDelete={() => setDeletingTask({ id: task.id, title: task.title, columnId: task.column_id })}
+                        isSelected={selectedTaskId === task.id}
+                        onSelect={() => setSelectedTaskId(selectedTaskId === task.id ? null : task.id)}
+                      />
                     ))}
                   </div>
                 </SortableContext>
@@ -141,6 +206,18 @@ export default function KanbanBoard() {
           <DragOverlayContent activeId={activeId} activeType={activeType} />
         ) : null}
       </DragOverlay>
+
+      <ConfirmModal
+        open={deletingTask !== null}
+        title="Delete Task"
+        message={deletingTask ? `Are you sure you want to delete "${deletingTask.title}"? This action cannot be undone.` : ''}
+        confirmLabel="Delete Task"
+        variant="danger"
+        onConfirm={() => void handleTaskDelete()}
+        onCancel={() => setDeletingTask(null)}
+      />
+
+      <ShortcutsHelp open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </DndContext>
   );
 }

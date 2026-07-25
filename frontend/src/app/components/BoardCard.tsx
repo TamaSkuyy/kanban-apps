@@ -28,7 +28,10 @@ export default function BoardCard({ board }: { board: Board }) {
 
   return (
     <>
-      <div className="rounded-lg border bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+      <div
+        className="rounded-lg border bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+        style={board.theme_color ? { borderLeftColor: board.theme_color, borderLeftWidth: '4px' } : undefined}
+      >
         <Link className="block text-lg font-medium hover:text-blue-600" href={`/boards/${board.id}`}>
           {board.title}
         </Link>

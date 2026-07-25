@@ -20,7 +20,7 @@ type KanbanState = {
   error: string | null;
   fetchBoards: () => Promise<void>;
   createBoard: (title: string) => Promise<void>;
-  updateBoard: (boardId: string, title: string) => Promise<void>;
+  updateBoard: (boardId: string, title: string, themeColor?: string | null) => Promise<void>;
   deleteBoard: (boardId: string) => Promise<void>;
   fetchBoard: (boardId: string) => Promise<void>;
   createTask: (columnId: string, title: string) => Promise<void>;
@@ -65,18 +65,20 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
     }
   },
 
-  updateBoard: async (boardId: string, title: string) => {
+  updateBoard: async (boardId: string, title: string, themeColor?: string | null) => {
     const prev = get().currentBoard;
     if (prev) {
-      set({ currentBoard: { ...prev, title }, error: null });
+      set({ currentBoard: { ...prev, title, theme_color: themeColor !== undefined ? themeColor : prev.theme_color }, error: null });
     }
     try {
       await apiFetch<void>(`/api/boards/${boardId}`, {
         method: 'PUT',
-        body: JSON.stringify({ title }),
+        body: JSON.stringify({ title, theme_color: themeColor }),
       });
       set((state) => ({
-        boards: state.boards.map((b) => (b.id === boardId ? { ...b, title } : b)),
+        boards: state.boards.map((b) =>
+          b.id === boardId ? { ...b, title, theme_color: themeColor !== undefined ? themeColor : b.theme_color } : b
+        ),
       }));
     } catch (err) {
       if (prev) set({ currentBoard: prev });

@@ -5,7 +5,21 @@ import { CSS } from '@dnd-kit/utilities';
 import { Task } from '../../types';
 import TaskCard from './TaskCard';
 
-export default function SortableTaskCard({ boardId, task }: { boardId: string; task: Task }) {
+export default function SortableTaskCard({
+  boardId,
+  task,
+  onEdit,
+  onDelete,
+  isSelected,
+  onSelect,
+}: {
+  boardId: string;
+  task: Task;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  isSelected?: boolean;
+  onSelect?: () => void;
+}) {
   const {
     attributes,
     listeners,
@@ -26,7 +40,9 @@ export default function SortableTaskCard({ boardId, task }: { boardId: string; t
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <TaskCard boardId={boardId} task={task} />
+      <div onClick={onSelect}>
+        <TaskCard boardId={boardId} task={task} onEdit={onEdit} onDelete={onDelete} isSelected={isSelected} />
+      </div>
     </div>
   );
 }

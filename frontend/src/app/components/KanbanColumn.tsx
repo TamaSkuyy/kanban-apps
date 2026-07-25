@@ -53,6 +53,7 @@ export default function KanbanColumn({
     <div
       ref={setDroppableRef}
       style={style}
+      data-kanban-column
       className={`flex w-[280px] shrink-0 flex-col rounded-lg bg-slate-100 p-3 transition-colors sm:w-auto sm:shrink ${
         isOver ? 'ring-2 ring-blue-400 bg-blue-50' : ''
       } ${isDragging ? 'opacity-50' : ''}`}

@@ -19,12 +19,13 @@ import (
 )
 
 type Board struct {
-	ID        string    `json:"id"`
-	UserID    string    `json:"user_id"`
-	Title     string    `json:"title"`
-	Columns   []Column  `json:"columns,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID         string    `json:"id"`
+	UserID     string    `json:"user_id"`
+	Title      string    `json:"title"`
+	ThemeColor *string   `json:"theme_color"`
+	Columns    []Column  `json:"columns,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type Column struct {
@@ -326,7 +327,7 @@ func (s *server) me(c *gin.Context) {
 
 func (s *server) listBoards(c *gin.Context) {
 	rows, err := s.db.Query(c.Request.Context(), `
-		SELECT id, user_id, title, created_at, updated_at
+			SELECT id, user_id, title, theme_color, created_at, updated_at
 		FROM boards
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -340,7 +341,7 @@ func (s *server) listBoards(c *gin.Context) {
 	boards := []Board{}
 	for rows.Next() {
 		var b Board
-		if err := rows.Scan(&b.ID, &b.UserID, &b.Title, &b.CreatedAt, &b.UpdatedAt); err != nil {
+			if err := rows.Scan(&b.ID, &b.UserID, &b.Title, &b.ThemeColor, &b.CreatedAt, &b.UpdatedAt); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse board"})
 			return
 		}
@@ -351,7 +352,8 @@ func (s *server) listBoards(c *gin.Context) {
 
 func (s *server) createBoard(c *gin.Context) {
 	var req struct {
-		Title string `json:"title" binding:"required"`
+		Title      string  `json:"title" binding:"required"`
+		ThemeColor *string `json:"theme_color"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
@@ -367,10 +369,10 @@ func (s *server) createBoard(c *gin.Context) {
 
 	var b Board
 	err = tx.QueryRow(c.Request.Context(), `
-		INSERT INTO boards (user_id, title)
-		VALUES ($1, $2)
-		RETURNING id, user_id, title, created_at, updated_at
-	`, c.GetString("userID"), req.Title).Scan(&b.ID, &b.UserID, &b.Title, &b.CreatedAt, &b.UpdatedAt)
+		INSERT INTO boards (user_id, title, theme_color)
+		VALUES ($1, $2, $3)
+		RETURNING id, user_id, title, theme_color, created_at, updated_at
+	`, c.GetString("userID"), req.Title, req.ThemeColor).Scan(&b.ID, &b.UserID, &b.Title, &b.ThemeColor, &b.CreatedAt, &b.UpdatedAt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create board"})
 		return
@@ -418,6 +420,7 @@ func (s *server) getBoard(c *gin.Context) {
 func (s *server) updateBoard(c *gin.Context) {
 	var req struct {
 		Title string `json:"title" binding:"required"`
+		ThemeColor *string `json:"theme_color"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
@@ -724,10 +727,10 @@ func (s *server) validateColumnOwnership(ctx context.Context, userID, columnID, 
 func (s *server) getBoardData(ctx context.Context, userID string, boardID string) (*Board, error) {
 	var board Board
 	err := s.db.QueryRow(ctx, `
-		SELECT id, user_id, title, created_at, updated_at
+			SELECT id, user_id, title, theme_color, created_at, updated_at
 		FROM boards
 		WHERE id = $1 AND user_id = $2
-	`, boardID, userID).Scan(&board.ID, &board.UserID, &board.Title, &board.CreatedAt, &board.UpdatedAt)
+		`, boardID, userID).Scan(&board.ID, &board.UserID, &board.Title, &board.ThemeColor, &board.CreatedAt, &board.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
