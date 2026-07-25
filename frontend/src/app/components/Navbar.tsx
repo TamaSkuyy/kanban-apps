@@ -61,6 +61,7 @@ export default function Navbar() {
                 className="rounded p-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
                 onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
                 title="Toggle theme"
+                suppressHydrationWarning
               >
                 {theme === 'dark' ? '☀️' : '🌙'}
               </button>

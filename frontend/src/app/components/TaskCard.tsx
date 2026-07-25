@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { KeyboardEvent, useMemo, useState } from 'react';
+import { KeyboardEvent, useEffect, useMemo, useState } from 'react';
 import { Task } from '../../types';
 import { useKanbanStore } from '../lib/store';
 
@@ -85,7 +85,12 @@ export default function TaskCard({
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [hover, setHover] = useState(false);
-  const dueInfo = useMemo(() => getDueDateInfo(task.due_date), [task.due_date]);
+  const [mounted, setMounted] = useState(false);
+  const dueInfo = useMemo(() => (mounted ? getDueDateInfo(task.due_date) : null), [mounted, task.due_date]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const descPreview = task.description
     ? task.description.length > 80
       ? task.description.slice(0, 80) + '…'

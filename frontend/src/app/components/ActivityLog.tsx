@@ -45,6 +45,11 @@ function actionLabel(action: string): { icon: string; text: string } {
 export default function ActivityLog({ boardId }: { boardId: string }) {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -79,7 +84,9 @@ export default function ActivityLog({ boardId }: { boardId: string }) {
                     <strong className="font-medium text-slate-800 dark:text-slate-100">{a.detail}</strong>{' '}
                     {text}
                   </span>
-                  <span className="ml-auto shrink-0 text-xs text-slate-400">{timeAgo(a.created_at)}</span>
+                  <span className="ml-auto shrink-0 text-xs text-slate-400" suppressHydrationWarning>
+                    {mounted ? timeAgo(a.created_at) : ''}
+                  </span>
                 </li>
               );
             })}
