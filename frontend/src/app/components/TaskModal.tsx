@@ -39,7 +39,7 @@ export default function TaskModal({ standalone = false }: { standalone?: boolean
 
   if (!currentBoard) {
     return (
-      <ModalShell standalone={standalone}>
+      <ModalShell standalone={standalone} boardId={params.boardId}>
         <div className="space-y-4 animate-pulse p-6">
           <div className="h-8 w-2/3 rounded-lg bg-slate-200" />
           <div className="h-24 w-full rounded-xl bg-slate-100" />
@@ -51,7 +51,7 @@ export default function TaskModal({ standalone = false }: { standalone?: boolean
 
   if (!task) {
     return (
-      <ModalShell standalone={standalone}>
+      <ModalShell standalone={standalone} boardId={params.boardId}>
         <p className="p-6 text-sm text-slate-500">Task not found.</p>
       </ModalShell>
     );
@@ -64,15 +64,27 @@ export default function TaskModal({ standalone = false }: { standalone?: boolean
 function ModalShell({
   standalone,
   children,
+  boardId,
 }: {
   standalone: boolean;
   children: React.ReactNode;
+  boardId?: string;
 }) {
   const router = useRouter();
 
   if (standalone) {
     return (
       <div className="mx-auto max-w-2xl pt-8">
+        {/* Back to board */}
+        <button
+          className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+          onClick={() => router.push(`/boards/${boardId}`)}
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to Board
+        </button>
         <div className="w-full rounded-3xl bg-white p-6 shadow-2xl md:p-8">{children}</div>
       </div>
     );
@@ -118,7 +130,8 @@ function TaskModalForm({
       labels,
     });
     toast.success('Task updated');
-    if (!standalone) router.back();
+    if (standalone) router.push(`/boards/${boardId}`);
+    else router.back();
   }
 
   async function onDelete() {
@@ -350,7 +363,7 @@ function TaskModalForm({
 
   return (
     <>
-      <ModalShell standalone={standalone}>{content}</ModalShell>
+      <ModalShell standalone={standalone} boardId={boardId}>{content}</ModalShell>
 
       <ConfirmModal
         open={confirmingDelete}
