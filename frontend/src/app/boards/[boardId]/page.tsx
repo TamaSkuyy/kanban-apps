@@ -2,7 +2,8 @@
 
 import { KeyboardEvent, useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { Search, Palette } from 'lucide-react';
+import Link from 'next/link';
+import { Search, Palette, ArrowLeft } from 'lucide-react';
 import KanbanBoard from '../../components/KanbanBoard';
 import { useKanbanStore } from '../../lib/store';
 import { useBoardEvents } from '../../lib/useBoardEvents';
@@ -101,18 +102,33 @@ export default function BoardDetailPage() {
 
   if (loading && !currentBoard) return <SkeletonBoardDetail />;
   if (error) return (
-    <div className="flex min-h-[60vh] items-center justify-center">
+    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
       <p className="rounded-xl bg-red-50 px-5 py-4 text-sm font-medium text-red-600">{error}</p>
+      <Link href="/boards" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-700">
+        <ArrowLeft className="h-4 w-4" /> Back to Boards
+      </Link>
     </div>
   );
   if (!currentBoard) return (
-    <div className="flex min-h-[60vh] items-center justify-center">
+    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
       <p className="text-sm text-slate-500">Board not found.</p>
+      <Link href="/boards" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-700">
+        <ArrowLeft className="h-4 w-4" /> Back to Boards
+      </Link>
     </div>
   );
 
   return (
     <div className="-mx-4 -my-6 min-h-[calc(100vh-57px)] bg-blue-50/30 px-4 py-6 dark:bg-slate-950/30">
+      {/* Back link */}
+      <Link
+        href="/boards"
+        className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to Boards
+      </Link>
+
       {/* ── Board header ──────────────────────────── */}
       <div className="mb-6 flex flex-wrap items-center gap-4">
         {/* Board title */}

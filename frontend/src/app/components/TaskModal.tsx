@@ -74,19 +74,7 @@ function ModalShell({
 
   if (standalone) {
     return (
-      <div className="mx-auto max-w-2xl pt-8">
-        {/* Back to board */}
-        <button
-          className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-          onClick={() => router.push(`/boards/${boardId}`)}
-        >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to Board
-        </button>
-        <div className="w-full rounded-3xl bg-white p-6 shadow-2xl md:p-8">{children}</div>
-      </div>
+      <div className="w-full rounded-3xl bg-white p-6 shadow-2xl md:p-8">{children}</div>
     );
   }
 

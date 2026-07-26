@@ -49,7 +49,7 @@ func TestPublishBoardEvent(t *testing.T) {
 
 func TestSSEHubSubscribeUnsubscribe(t *testing.T) {
 	hub := newSSEHub()
-	ch := hub.subscribe("board-1")
+	ch := hub.subscribe("board-1", "user-1", "test@test.com")
 	if ch == nil {
 		t.Fatal("expected non-nil channel")
 	}
@@ -65,7 +65,7 @@ func TestSSEHubSubscribeUnsubscribe(t *testing.T) {
 
 func TestSSEHubPublish(t *testing.T) {
 	hub := newSSEHub()
-	ch := hub.subscribe("board-1")
+	ch := hub.subscribe("board-1", "user-1", "test@test.com")
 	hub.publish("board-1", []byte(`{"type":"test"}`))
 
 	// Should receive the message (non-blocking)
