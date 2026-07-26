@@ -10,12 +10,9 @@ interface SSEEvent {
   data?: Task | { task_id: string } | { column_id: string; position: number } | OnlineUser[] | null;
 }
 
-type CursorEvent = { user_id: string; email: string; x: number; y: number };
-
 export function useBoardEvents(
   boardId: string,
-  onPresence?: (users: OnlineUser[]) => void,
-  onCursor?: (cursor: CursorEvent) => void
+  onPresence?: (users: OnlineUser[]) => void
 ) {
   const { applyTaskEvent, removeTaskFromStore, fetchBoard } = useKanbanStore();
   const retryRef = useRef(0);
@@ -90,12 +87,6 @@ export function useBoardEvents(
         case 'presence.updated':
           if (onPresence && Array.isArray(evt.data)) {
             onPresence(evt.data as OnlineUser[]);
-          }
-          break;
-
-        case 'cursor.moved':
-          if (onCursor && evt.data && 'x' in (evt.data as Record<string, unknown>)) {
-            onCursor(evt.data as unknown as CursorEvent);
           }
           break;
 

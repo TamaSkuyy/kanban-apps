@@ -19,6 +19,7 @@ type KanbanState = {
   currentBoard: Board | null;
   loading: boolean;
   error: string | null;
+  myRole: string | null;
   fetchBoards: () => Promise<void>;
   createBoard: (title: string) => Promise<void>;
   updateBoard: (boardId: string, title: string, themeColor?: string | null) => Promise<void>;
@@ -42,6 +43,7 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
   currentBoard: null,
   loading: false,
   error: null,
+  myRole: null,
 
   fetchBoards: async () => {
     set({ loading: true, error: null });
@@ -100,14 +102,19 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
   fetchBoard: async (boardId: string) => {
     set({ loading: true, error: null });
     try {
-      const board = await apiFetch<Board>(`/api/boards/${boardId}`);
+      const data = await apiFetch<{ board?: Board; my_role?: string } & Board>(`/api/boards/${boardId}`);
+      // Support both response formats:
+      // - New:  { board: {...}, my_role: "..." }
+      // - Old:  { id: "...", columns: [...], ... }  (board returned directly)
+      const board = (data.board ?? (data as unknown as Board)) as Board;
+      const role = data.my_role || 'viewer';
       // Normalize: ensure every column has a tasks array
       if (board.columns) {
         for (const col of board.columns) {
           if (!col.tasks) col.tasks = [];
         }
       }
-      set({ currentBoard: board, loading: false });
+      set({ currentBoard: board, myRole: role, loading: false });
     } catch (err) {
       set({ loading: false, error: err instanceof Error ? err.message : 'Failed to fetch board' });
     }

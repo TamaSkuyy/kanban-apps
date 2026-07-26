@@ -149,8 +149,18 @@ export DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:
 if [ "$NO_BACKEND" = false ]; then
   step "Starting Go backend"
 
+  # Kill any stale process lingering on the backend port
+  BACKEND_PORT="${BACKEND_ADDR#:}"  # strip leading colon, e.g. ":8080" → "8080"
+  BACKEND_PORT="${BACKEND_PORT:-8080}"
+  STALE_PID=$(ss -tlnp 2>/dev/null | awk -v port="$BACKEND_PORT" -F'[,=]' '$0~":"port" "{for(i=1;i<=NF;i++) if($i~/pid=/) {gsub(/[^0-9]/,"",$i); print $i}}' | head -1)
+  if [ -n "$STALE_PID" ]; then
+    warn "Killing stale process on port $BACKEND_PORT (PID $STALE_PID)..."
+    kill "$STALE_PID" 2>/dev/null || true
+    sleep 1
+  fi
+
   if command -v air &>/dev/null; then
-    log "Backend: air (hot reload) → http://localhost:8080"
+    log "Backend: air (hot reload) → http://localhost:$BACKEND_PORT"
     (cd backend && air) &
     PIDS+=($!)
   else

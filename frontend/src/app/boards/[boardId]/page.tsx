@@ -12,8 +12,7 @@ import { SkeletonBoardDetail } from '../../components/Skeletons';
 import ActivityLog from '../../components/ActivityLog';
 import OnlineAvatars from '../../components/OnlineAvatars';
 import MemberPanel from '../../components/MemberPanel';
-import { apiFetch } from '../../lib/api';
-import type { BoardMember, OnlineUser } from '../../../types';
+import type { OnlineUser } from '../../../types';
 
 const THEME_COLORS = [
   { label: 'None', value: null },
@@ -32,50 +31,24 @@ const THEME_COLORS = [
 export default function BoardDetailPage() {
   const params = useParams<{ boardId: string }>();
   const boardId = params.boardId;
-  const { currentBoard, loading, error, fetchBoard, updateBoard } = useKanbanStore();
+  const { currentBoard, loading, error, fetchBoard, updateBoard, myRole } = useKanbanStore();
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearch = useDebounce(searchQuery, 300);
   const [presenceEvent, setPresenceEvent] = useState<{ data: OnlineUser[] } | null>(null);
-  const [userRole, setUserRole] = useState<string>('viewer');
-  const [remoteCursors, setRemoteCursors] = useState<Array<{ user_id: string; email: string; x: number; y: number }>>([]);
+  const userRole = myRole; // comes from board response, no separate fetch needed
 
   useEffect(() => {
     fetchBoard(boardId);
   }, [fetchBoard, boardId]);
 
-  // Fetch user's role on this board
-  useEffect(() => {
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) return;
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const userId = payload.user_id;
-      apiFetch<{ members: BoardMember[] }>(`/api/boards/${boardId}/members`)
-        .then((d) => {
-          const me = d.members.find((m) => m.user_id === userId);
-          setUserRole(me?.role || 'viewer');
-        })
-        .catch(() => setUserRole('viewer'));
-    } catch {
-      setUserRole('viewer');
-    }
-  }, [boardId]);
-
   const handlePresence = useCallback((users: OnlineUser[]) => {
     setPresenceEvent({ data: users });
   }, []);
 
-  const handleCursor = useCallback((cursor: { user_id: string; email: string; x: number; y: number }) => {
-    setRemoteCursors((prev) => {
-      const filtered = prev.filter((c) => c.user_id !== cursor.user_id);
-      return [...filtered, cursor];
-    });
-  }, []);
-
-  useBoardEvents(boardId, handlePresence, handleCursor);
+  useBoardEvents(boardId, handlePresence);
 
   useEffect(() => {
     if (currentBoard) setTitleDraft(currentBoard.title);
@@ -219,7 +192,7 @@ export default function BoardDetailPage() {
       </div>
 
       {/* ── Board ─────────────────────────────────── */}
-      <KanbanBoard searchQuery={debouncedSearch} readOnly={userRole === 'viewer'} remoteCursors={remoteCursors} />
+      <KanbanBoard searchQuery={debouncedSearch} readOnly={userRole !== 'editor' && userRole !== 'owner'} />
     </div>
   );
 }

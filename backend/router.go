@@ -475,7 +475,8 @@ func (s *server) createBoard(c *gin.Context) {
 
 func (s *server) getBoard(c *gin.Context) {
 	boardID := c.Param("id")
-	board, err := s.getBoardData(c.Request.Context(), c.GetString("userID"), boardID)
+	userID := c.GetString("userID")
+	board, err := s.getBoardData(c.Request.Context(), userID, boardID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "board not found"})
@@ -484,7 +485,9 @@ func (s *server) getBoard(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch board"})
 		return
 	}
-	c.JSON(http.StatusOK, board)
+
+	role, _ := s.getMemberRole(c.Request.Context(), boardID, userID)
+	c.JSON(http.StatusOK, gin.H{"board": board, "my_role": role})
 }
 
 func (s *server) updateBoard(c *gin.Context) {
@@ -1062,9 +1065,10 @@ func (s *server) validateColumnOwnership(ctx context.Context, userID, columnID, 
 func (s *server) getBoardData(ctx context.Context, userID string, boardID string) (*Board, error) {
 	var board Board
 	err := s.db.QueryRow(ctx, `
-			SELECT id, user_id, title, theme_color, created_at, updated_at
-		FROM boards
-		WHERE id = $1 AND user_id = $2
+			SELECT b.id, b.user_id, b.title, b.theme_color, b.created_at, b.updated_at
+		FROM boards b
+		JOIN board_members bm ON bm.board_id = b.id
+		WHERE b.id = $1 AND bm.user_id = $2
 		`, boardID, userID).Scan(&board.ID, &board.UserID, &board.Title, &board.ThemeColor, &board.CreatedAt, &board.UpdatedAt)
 	if err != nil {
 		return nil, err

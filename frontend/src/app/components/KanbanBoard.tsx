@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   DndContext,
@@ -27,24 +27,13 @@ import SortableTaskCard from './SortableTaskCard';
 import DragOverlayContent from './DragOverlayContent';
 import ConfirmModal from './ConfirmModal';
 import ShortcutsHelp from './ShortcutsHelp';
-import RemoteCursors from './RemoteCursors';
-import { useCursorTracking } from '../lib/useCursorTracking';
-
-interface CursorData {
-  user_id: string;
-  email: string;
-  x: number;
-  y: number;
-}
 
 export default function KanbanBoard({
   searchQuery = '',
   readOnly = false,
-  remoteCursors = [],
 }: {
   searchQuery?: string;
   readOnly?: boolean;
-  remoteCursors?: CursorData[];
 }) {
   const router = useRouter();
   const { currentBoard, moveTaskOptimistic, moveColumnOptimistic, deleteTask, createTask } = useKanbanStore();
@@ -53,10 +42,6 @@ export default function KanbanBoard({
   const [deletingTask, setDeletingTask] = useState<{ id: string; title: string; columnId: string } | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const boardRef = useRef<HTMLDivElement>(null);
-
-  // Cursor tracking
-  useCursorTracking(currentBoard?.id || '', boardRef, !readOnly);
 
   const sensors = useSensors(
     ...(readOnly ? [] : [useSensor(PointerSensor, { activationConstraint: { distance: 5 } })])
@@ -212,8 +197,7 @@ export default function KanbanBoard({
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
-      <div ref={boardRef} className="relative">
-        <RemoteCursors cursors={remoteCursors} />
+      <div className="relative">
         <SortableContext items={columnIds} strategy={verticalListSortingStrategy}>
           <div className="flex gap-4 overflow-x-auto pb-4 -mx-1 px-1 snap-x snap-mandatory md:grid md:grid-cols-3 md:overflow-visible md:pb-0 md:snap-none">
           {currentBoard.columns.map((column) => {
