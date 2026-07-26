@@ -14,9 +14,11 @@ const DOT_COLORS = ['bg-blue-400', 'bg-amber-400', 'bg-green-400', 'bg-violet-40
 export default function KanbanColumn({
   column,
   children,
+  readOnly,
 }: {
   column: Column;
   children: React.ReactNode;
+  readOnly?: boolean;
 }) {
   const { createTask } = useKanbanStore();
   const [taskTitle, setTaskTitle] = useState('');
@@ -104,6 +106,7 @@ export default function KanbanColumn({
       </div>
 
       {/* ── Add task ──────────────────────── */}
+      {!readOnly && (
       <div className="mt-3">
         {adding ? (
           <form onSubmit={onCreate} className="space-y-2">
@@ -142,6 +145,7 @@ export default function KanbanColumn({
           </button>
         )}
       </div>
+      )}
     </div>
   );
 }

@@ -59,6 +59,20 @@ type Activity struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type BoardMember struct {
+	BoardID   string    `json:"board_id"`
+	UserID    string    `json:"user_id"`
+	Email     string    `json:"email"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type sseClient struct {
+	ch     chan []byte
+	userID string
+	email  string
+}
+
 
 type rateLimiter struct {
 	mu       sync.Mutex
@@ -74,7 +88,7 @@ type visitor struct {
 
 type sseHub struct {
 	mu       sync.RWMutex
-	watchers map[string]map[chan []byte]struct{}
+	watchers map[string]map[chan []byte]*sseClient
 }
 
 func scanLabels(b []byte) []string {
@@ -89,17 +103,18 @@ func scanLabels(b []byte) []string {
 }
 
 func newSSEHub() *sseHub {
-	return &sseHub{watchers: map[string]map[chan []byte]struct{}{}}
+	return &sseHub{watchers: map[string]map[chan []byte]*sseClient{}}
 }
 
-func (h *sseHub) subscribe(boardID string) chan []byte {
+func (h *sseHub) subscribe(boardID, userID, email string) chan []byte {
 	ch := make(chan []byte, 8)
+	client := &sseClient{ch: ch, userID: userID, email: email}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.watchers[boardID] == nil {
-		h.watchers[boardID] = map[chan []byte]struct{}{}
+		h.watchers[boardID] = map[chan []byte]*sseClient{}
 	}
-	h.watchers[boardID][ch] = struct{}{}
+	h.watchers[boardID][ch] = client
 	return ch
 }
 
@@ -116,12 +131,29 @@ func (h *sseHub) unsubscribe(boardID string, ch chan []byte) {
 	}
 }
 
+func (h *sseHub) getOnlineUsers(boardID string) []map[string]string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	users := []map[string]string{}
+	seen := map[string]bool{}
+	if h.watchers[boardID] == nil {
+		return users
+	}
+	for _, client := range h.watchers[boardID] {
+		if !seen[client.userID] {
+			seen[client.userID] = true
+			users = append(users, map[string]string{"user_id": client.userID, "email": client.email})
+		}
+	}
+	return users
+}
+
 func (h *sseHub) publish(boardID string, payload []byte) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	for ch := range h.watchers[boardID] {
+	for _, client := range h.watchers[boardID] {
 		select {
-		case ch <- payload:
+		case client.ch <- payload:
 		default:
 		}
 	}
@@ -204,6 +236,12 @@ func NewRouter(db *pgxpool.Pool) *gin.Engine {
 	protected.DELETE("/boards/:id", s.deleteBoard)
 	protected.GET("/boards/:id/events", s.boardEvents)
 		protected.GET("/boards/:id/activities", s.getActivities)
+		protected.GET("/boards/:id/members", s.listMembers)
+		protected.POST("/boards/:id/members", s.addMember)
+		protected.PUT("/boards/:id/members/:userID", s.updateMemberRole)
+		protected.DELETE("/boards/:id/members/:userID", s.removeMember)
+		protected.GET("/boards/:id/online", s.getOnline)
+		protected.POST("/boards/:id/cursor", s.updateCursor)
 
 	protected.PUT("/tasks/:id", s.updateTask)
 	protected.DELETE("/tasks/:id", s.deleteTask)
@@ -350,10 +388,11 @@ func (s *server) me(c *gin.Context) {
 
 func (s *server) listBoards(c *gin.Context) {
 	rows, err := s.db.Query(c.Request.Context(), `
-			SELECT id, user_id, title, theme_color, created_at, updated_at
-		FROM boards
-		WHERE user_id = $1
-		ORDER BY created_at DESC
+			SELECT b.id, b.user_id, b.title, b.theme_color, b.created_at, b.updated_at
+		FROM boards b
+		INNER JOIN board_members bm ON bm.board_id = b.id
+		WHERE bm.user_id = $1
+		ORDER BY b.created_at DESC
 	`, c.GetString("userID"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list boards"})
@@ -417,6 +456,14 @@ func (s *server) createBoard(c *gin.Context) {
 		b.Columns = append(b.Columns, col)
 	}
 
+	// Add creator as owner
+	_, err = tx.Exec(c.Request.Context(), `INSERT INTO board_members (board_id, user_id, role) VALUES ($1, $2, 'owner')`,
+		b.ID, c.GetString("userID"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to add board owner"})
+		return
+	}
+
 	if err := tx.Commit(c.Request.Context()); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to commit transaction"})
 		return
@@ -441,6 +488,11 @@ func (s *server) getBoard(c *gin.Context) {
 }
 
 func (s *server) updateBoard(c *gin.Context) {
+	if err := s.requireBoardAccess(c.Request.Context(), c.Param("id"), c.GetString("userID"), "editor"); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+		return
+	}
+
 	var req struct {
 		Title string `json:"title" binding:"required"`
 		ThemeColor *string `json:"theme_color"`
@@ -453,8 +505,8 @@ func (s *server) updateBoard(c *gin.Context) {
 	cmd, err := s.db.Exec(c.Request.Context(), `
 		UPDATE boards
 		SET title = $1, updated_at = now()
-		WHERE id = $2 AND user_id = $3
-	`, req.Title, c.Param("id"), c.GetString("userID"))
+		WHERE id = $2
+	`, req.Title, c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update board"})
 		return
@@ -468,10 +520,15 @@ func (s *server) updateBoard(c *gin.Context) {
 }
 
 func (s *server) deleteBoard(c *gin.Context) {
+	if err := s.requireBoardAccess(c.Request.Context(), c.Param("id"), c.GetString("userID"), "owner"); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only the owner can delete this board"})
+		return
+	}
+
 	cmd, err := s.db.Exec(c.Request.Context(), `
 		DELETE FROM boards
-		WHERE id = $1 AND user_id = $2
-	`, c.Param("id"), c.GetString("userID"))
+		WHERE id = $1
+	`, c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete board"})
 		return
@@ -497,7 +554,8 @@ func (s *server) createTask(c *gin.Context) {
 		SELECT b.id
 		FROM boards b
 		JOIN columns c ON c.board_id = b.id
-		WHERE c.id = $1 AND b.user_id = $2
+		JOIN board_members bm ON bm.board_id = b.id
+		WHERE c.id = $1 AND bm.user_id = $2 AND bm.role IN ('owner', 'editor')
 	`, c.Param("colId"), c.GetString("userID")).Scan(&boardID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "column not found"})
@@ -544,7 +602,8 @@ func (s *server) updateColumn(c *gin.Context) {
 		SELECT b.id
 		FROM columns c
 		JOIN boards b ON b.id = c.board_id
-		WHERE c.id = $1 AND b.user_id = $2
+		JOIN board_members bm ON bm.board_id = b.id
+		WHERE c.id = $1 AND bm.user_id = $2 AND bm.role IN ('owner', 'editor')
 	`, c.Param("id"), c.GetString("userID")).Scan(&boardID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "column not found"})
@@ -587,7 +646,8 @@ func (s *server) updateTask(c *gin.Context) {
 		FROM tasks t
 		JOIN columns c ON c.id = t.column_id
 		JOIN boards b ON b.id = c.board_id
-		WHERE t.id = $1 AND b.user_id = $2
+		JOIN board_members bm ON bm.board_id = b.id
+		WHERE t.id = $1 AND bm.user_id = $2 AND bm.role IN ('owner', 'editor')
 	`, c.Param("id"), c.GetString("userID")).Scan(
 		&current.ID,
 		&current.ColumnID,
@@ -663,7 +723,8 @@ func (s *server) deleteTask(c *gin.Context) {
 		FROM tasks t
 		JOIN columns c ON c.id = t.column_id
 		JOIN boards b ON b.id = c.board_id
-		WHERE t.id = $1 AND b.user_id = $2
+		JOIN board_members bm ON bm.board_id = b.id
+		WHERE t.id = $1 AND bm.user_id = $2 AND bm.role IN ('owner', 'editor')
 	`, c.Param("id"), c.GetString("userID")).Scan(&boardID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
@@ -688,12 +749,25 @@ func (s *server) boardEvents(c *gin.Context) {
 		return
 	}
 
-	stream := s.hub.subscribe(boardID)
-	defer s.hub.unsubscribe(boardID, stream)
+	userID := c.GetString("userID")
+	email := c.GetString("email")
+	stream := s.hub.subscribe(boardID, userID, email)
+	defer func() {
+		s.hub.unsubscribe(boardID, stream)
+		// Broadcast presence: user left
+		online := s.hub.getOnlineUsers(boardID)
+		presenceData, _ := json.Marshal(map[string]interface{}{"type": "presence.updated", "board_id": boardID, "data": online})
+		s.hub.publish(boardID, presenceData)
+	}()
 
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
+
+	// Broadcast presence: user joined
+	online := s.hub.getOnlineUsers(boardID)
+	presenceData, _ := json.Marshal(map[string]interface{}{"type": "presence.updated", "board_id": boardID, "data": online})
+	s.hub.publish(boardID, presenceData)
 
 	ticker := time.NewTicker(20 * time.Second)
 	defer ticker.Stop()
@@ -758,6 +832,196 @@ func (s *server) getActivities(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"activities": activities})
 }
 
+// getMemberRole returns the role of a user on a board (empty string if not a member)
+func (s *server) getMemberRole(ctx context.Context, boardID, userID string) (string, error) {
+	var role string
+	err := s.db.QueryRow(ctx, `SELECT role FROM board_members WHERE board_id = $1 AND user_id = $2`,
+		boardID, userID).Scan(&role)
+	if err != nil {
+		return "", err
+	}
+	return role, nil
+}
+
+// requireBoardAccess checks if user can access a board (any role)
+func (s *server) requireBoardAccess(ctx context.Context, boardID, userID string, minRole string) error {
+	role, err := s.getMemberRole(ctx, boardID, userID)
+	if err != nil {
+		return err
+	}
+	if minRole == "viewer" {
+		return nil // any role is fine
+	}
+	if minRole == "editor" && (role == "owner" || role == "editor") {
+		return nil
+	}
+	if minRole == "owner" && role == "owner" {
+		return nil
+	}
+	return errors.New("insufficient permissions")
+}
+
+func (s *server) listMembers(c *gin.Context) {
+	boardID := c.Param("id")
+	if err := s.requireBoardAccess(c.Request.Context(), boardID, c.GetString("userID"), "viewer"); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+		return
+	}
+
+	rows, err := s.db.Query(c.Request.Context(), `
+		SELECT bm.board_id, bm.user_id, u.email, bm.role, bm.created_at
+		FROM board_members bm
+		JOIN users u ON u.id = bm.user_id
+		WHERE bm.board_id = $1
+		ORDER BY bm.created_at ASC
+	`, boardID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list members"})
+		return
+	}
+	defer rows.Close()
+
+	members := []BoardMember{}
+	for rows.Next() {
+		var m BoardMember
+		if err := rows.Scan(&m.BoardID, &m.UserID, &m.Email, &m.Role, &m.CreatedAt); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse member"})
+			return
+		}
+		members = append(members, m)
+	}
+	c.JSON(http.StatusOK, gin.H{"members": members})
+}
+
+func (s *server) addMember(c *gin.Context) {
+	boardID := c.Param("id")
+	if err := s.requireBoardAccess(c.Request.Context(), boardID, c.GetString("userID"), "owner"); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only the owner can add members"})
+		return
+	}
+
+	var req struct {
+		Email string `json:"email" binding:"required"`
+		Role  string `json:"role" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || (req.Role != "editor" && req.Role != "viewer") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request — role must be editor or viewer"})
+		return
+	}
+
+	// Find user by email
+	var userID string
+	err := s.db.QueryRow(c.Request.Context(), `SELECT id FROM users WHERE email = $1`, req.Email).Scan(&userID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	_, err = s.db.Exec(c.Request.Context(), `
+		INSERT INTO board_members (board_id, user_id, role)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (board_id, user_id) DO UPDATE SET role = $3
+	`, boardID, userID, req.Role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to add member"})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+func (s *server) updateMemberRole(c *gin.Context) {
+	boardID := c.Param("id")
+	targetUserID := c.Param("userID")
+	if err := s.requireBoardAccess(c.Request.Context(), boardID, c.GetString("userID"), "owner"); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only the owner can change roles"})
+		return
+	}
+
+	var req struct {
+		Role string `json:"role" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || (req.Role != "editor" && req.Role != "viewer") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role"})
+		return
+	}
+
+	_, err := s.db.Exec(c.Request.Context(), `
+		UPDATE board_members SET role = $1
+		WHERE board_id = $2 AND user_id = $3 AND role != 'owner'
+	`, req.Role, boardID, targetUserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update role"})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (s *server) removeMember(c *gin.Context) {
+	boardID := c.Param("id")
+	targetUserID := c.Param("userID")
+	if err := s.requireBoardAccess(c.Request.Context(), boardID, c.GetString("userID"), "owner"); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only the owner can remove members"})
+		return
+	}
+
+	// Cannot remove owner
+	var role string
+	err := s.db.QueryRow(c.Request.Context(), `SELECT role FROM board_members WHERE board_id = $1 AND user_id = $2`,
+		boardID, targetUserID).Scan(&role)
+	if err != nil || role == "owner" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot remove the owner"})
+		return
+	}
+
+	_, err = s.db.Exec(c.Request.Context(), `DELETE FROM board_members WHERE board_id = $1 AND user_id = $2`,
+		boardID, targetUserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove member"})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (s *server) getOnline(c *gin.Context) {
+	boardID := c.Param("id")
+	if err := s.requireBoardAccess(c.Request.Context(), boardID, c.GetString("userID"), "viewer"); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+		return
+	}
+	online := s.hub.getOnlineUsers(boardID)
+	c.JSON(http.StatusOK, gin.H{"online": online})
+}
+
+func (s *server) updateCursor(c *gin.Context) {
+	boardID := c.Param("id")
+	if err := s.requireBoardAccess(c.Request.Context(), boardID, c.GetString("userID"), "viewer"); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+		return
+	}
+
+	var req struct {
+		X float64 `json:"x" binding:"required"`
+		Y float64 `json:"y" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	cursorData := map[string]interface{}{
+		"user_id": c.GetString("userID"),
+		"email":   c.GetString("email"),
+		"x":       req.X,
+		"y":       req.Y,
+	}
+	evt := boardEvent{Type: "cursor.moved", BoardID: boardID, Data: cursorData}
+	payload, _ := json.Marshal(evt)
+	s.hub.publish(boardID, payload)
+
+	c.Status(http.StatusNoContent)
+}
+
 func (s *server) publishBoardEvent(boardID, eventType string, data interface{}) {
 	evt := boardEvent{Type: eventType, BoardID: boardID, Data: data}
 	payload, _ := json.Marshal(evt)
@@ -766,7 +1030,7 @@ func (s *server) publishBoardEvent(boardID, eventType string, data interface{}) 
 
 func (s *server) ensureBoardOwnership(ctx context.Context, userID, boardID string) error {
 	var exists bool
-	err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM boards WHERE id = $1 AND user_id = $2)`, boardID, userID).Scan(&exists)
+	err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM board_members WHERE board_id = $1 AND user_id = $2)`, boardID, userID).Scan(&exists)
 	if err != nil {
 		return err
 	}

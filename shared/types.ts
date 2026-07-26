@@ -29,3 +29,16 @@ export interface Board {
   updated_at: string;
   columns?: Column[];
 }
+
+export interface BoardMember {
+  board_id: string;
+  user_id: string;
+  email: string;
+  role: 'owner' | 'editor' | 'viewer';
+  created_at: string;
+}
+
+export interface OnlineUser {
+  user_id: string;
+  email: string;
+}

@@ -1,1 +1,1 @@
-export type { Board, Column, Task } from '../../../shared/types';
+export type { Board, Column, Task, BoardMember, OnlineUser } from '../../../shared/types';

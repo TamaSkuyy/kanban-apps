@@ -85,6 +85,7 @@ export default function TaskCard({
   onDelete,
   isSelected,
   searchQuery,
+  readOnly,
 }: {
   boardId: string;
   task: Task;
@@ -92,6 +93,7 @@ export default function TaskCard({
   onDelete?: () => void;
   isSelected?: boolean;
   searchQuery?: string;
+  readOnly?: boolean;
 }) {
   const isSearching = searchQuery && searchQuery.trim().length > 0;
   const matchesSearch = isSearching
@@ -185,7 +187,7 @@ export default function TaskCard({
         ) : (
           <button
             className="w-full pr-10 text-left text-sm font-medium text-slate-700 dark:text-slate-200"
-            onDoubleClick={() => setEditing(true)}
+            onDoubleClick={() => { if (!readOnly) setEditing(true); }}
           >
             {isSearching ? highlightText(task.title, searchQuery!) : task.title}
           </button>

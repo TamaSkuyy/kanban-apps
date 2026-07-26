@@ -2,15 +2,21 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useKanbanStore } from './store';
-import { Task } from '../../types';
+import { Task, OnlineUser } from '../../types';
 
 interface SSEEvent {
   type: string;
   board_id: string;
-  data?: Task | { task_id: string } | { column_id: string; position: number } | null;
+  data?: Task | { task_id: string } | { column_id: string; position: number } | OnlineUser[] | null;
 }
 
-export function useBoardEvents(boardId: string) {
+type CursorEvent = { user_id: string; email: string; x: number; y: number };
+
+export function useBoardEvents(
+  boardId: string,
+  onPresence?: (users: OnlineUser[]) => void,
+  onCursor?: (cursor: CursorEvent) => void
+) {
   const { applyTaskEvent, removeTaskFromStore, fetchBoard } = useKanbanStore();
   const retryRef = useRef(0);
   const esRef = useRef<EventSource | null>(null);
@@ -79,6 +85,18 @@ export function useBoardEvents(boardId: string) {
         case 'board.created':
           // Full refetch for board/column structural changes (rare)
           void fetchBoard(boardId);
+          break;
+
+        case 'presence.updated':
+          if (onPresence && Array.isArray(evt.data)) {
+            onPresence(evt.data as OnlineUser[]);
+          }
+          break;
+
+        case 'cursor.moved':
+          if (onCursor && evt.data && 'x' in (evt.data as Record<string, unknown>)) {
+            onCursor(evt.data as unknown as CursorEvent);
+          }
           break;
 
         default:

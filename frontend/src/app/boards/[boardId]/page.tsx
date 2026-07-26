@@ -1,6 +1,6 @@
 'use client';
 
-import { KeyboardEvent, useEffect, useState } from 'react';
+import { KeyboardEvent, useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { Search, Palette } from 'lucide-react';
 import KanbanBoard from '../../components/KanbanBoard';
@@ -9,6 +9,10 @@ import { useBoardEvents } from '../../lib/useBoardEvents';
 import { useDebounce } from '../../lib/useDebounce';
 import { SkeletonBoardDetail } from '../../components/Skeletons';
 import ActivityLog from '../../components/ActivityLog';
+import OnlineAvatars from '../../components/OnlineAvatars';
+import MemberPanel from '../../components/MemberPanel';
+import { apiFetch } from '../../lib/api';
+import type { BoardMember, OnlineUser } from '../../../types';
 
 const THEME_COLORS = [
   { label: 'None', value: null },
@@ -33,12 +37,44 @@ export default function BoardDetailPage() {
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearch = useDebounce(searchQuery, 300);
+  const [presenceEvent, setPresenceEvent] = useState<{ data: OnlineUser[] } | null>(null);
+  const [userRole, setUserRole] = useState<string>('viewer');
+  const [remoteCursors, setRemoteCursors] = useState<Array<{ user_id: string; email: string; x: number; y: number }>>([]);
 
   useEffect(() => {
     fetchBoard(boardId);
   }, [fetchBoard, boardId]);
 
-  useBoardEvents(boardId);
+  // Fetch user's role on this board
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const userId = payload.user_id;
+      apiFetch<{ members: BoardMember[] }>(`/api/boards/${boardId}/members`)
+        .then((d) => {
+          const me = d.members.find((m) => m.user_id === userId);
+          setUserRole(me?.role || 'viewer');
+        })
+        .catch(() => setUserRole('viewer'));
+    } catch {
+      setUserRole('viewer');
+    }
+  }, [boardId]);
+
+  const handlePresence = useCallback((users: OnlineUser[]) => {
+    setPresenceEvent({ data: users });
+  }, []);
+
+  const handleCursor = useCallback((cursor: { user_id: string; email: string; x: number; y: number }) => {
+    setRemoteCursors((prev) => {
+      const filtered = prev.filter((c) => c.user_id !== cursor.user_id);
+      return [...filtered, cursor];
+    });
+  }, []);
+
+  useBoardEvents(boardId, handlePresence, handleCursor);
 
   useEffect(() => {
     if (currentBoard) setTitleDraft(currentBoard.title);
@@ -157,10 +193,17 @@ export default function BoardDetailPage() {
           />
         </div>
         <ActivityLog boardId={boardId} />
+
+        <div className="ml-auto flex items-center gap-3">
+          <OnlineAvatars boardId={boardId} presenceEvent={presenceEvent} />
+          <div className="relative">
+            <MemberPanel boardId={boardId} />
+          </div>
+        </div>
       </div>
 
       {/* ── Board ─────────────────────────────────── */}
-      <KanbanBoard searchQuery={debouncedSearch} />
+      <KanbanBoard searchQuery={debouncedSearch} readOnly={userRole === 'viewer'} remoteCursors={remoteCursors} />
     </div>
   );
 }
