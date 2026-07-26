@@ -50,7 +50,7 @@ function FloatingDecorations({ extra = false }: { extra?: boolean }) {
       ))}
       {extra && pluses.map((p, i) => (
         <svg key={`plus-${i}`} className="animate-float-check absolute h-6 w-6 text-blue-300/25"
-          style={{ top: p.top, left: p.left, right: p.right, bottom: p.bottom, animationDelay: p.delay }}
+          style={{ top: p.top, left: p.left, right: p.right, animationDelay: p.delay } as React.CSSProperties}
           fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
         </svg>

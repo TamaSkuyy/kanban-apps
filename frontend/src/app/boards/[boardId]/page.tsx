@@ -6,6 +6,7 @@ import { Search, Palette } from 'lucide-react';
 import KanbanBoard from '../../components/KanbanBoard';
 import { useKanbanStore } from '../../lib/store';
 import { useBoardEvents } from '../../lib/useBoardEvents';
+import { useDebounce } from '../../lib/useDebounce';
 import { SkeletonBoardDetail } from '../../components/Skeletons';
 import ActivityLog from '../../components/ActivityLog';
 
@@ -31,6 +32,7 @@ export default function BoardDetailPage() {
   const [titleDraft, setTitleDraft] = useState('');
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearch = useDebounce(searchQuery, 300);
 
   useEffect(() => {
     fetchBoard(boardId);
@@ -105,7 +107,7 @@ export default function BoardDetailPage() {
               title="Change board color"
               style={
                 currentBoard.theme_color
-                  ? { backgroundColor: currentBoard.theme_color + '15', ringColor: currentBoard.theme_color }
+                  ? { backgroundColor: currentBoard.theme_color + '15', borderColor: currentBoard.theme_color }
                   : undefined
               }
             >
@@ -158,7 +160,7 @@ export default function BoardDetailPage() {
       </div>
 
       {/* ── Board ─────────────────────────────────── */}
-      <KanbanBoard searchQuery={searchQuery} />
+      <KanbanBoard searchQuery={debouncedSearch} />
     </div>
   );
 }

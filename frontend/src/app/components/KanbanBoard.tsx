@@ -19,6 +19,7 @@ import {
 } from '@dnd-kit/sortable';
 import { toast } from 'sonner';
 import { useKanbanStore } from '../lib/store';
+import { announceToScreenReader } from './ScreenReaderAnnouncer';
 import { useKeyboardShortcuts } from '../lib/useKeyboardShortcuts';
 import { findColumnByTaskId, getTaskPosition } from '../lib/dnd-hooks';
 import KanbanColumn from './KanbanColumn';
@@ -42,10 +43,18 @@ export default function KanbanBoard({ searchQuery = '' }: { searchQuery?: string
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event;
-    setActiveId(String(active.id));
+    const activeIdStr = String(active.id);
+    setActiveId(activeIdStr);
 
     const type = active.data.current?.type;
     setActiveType(type === 'column' ? 'column' : 'task');
+
+    if (type === 'task') {
+      const task = active.data.current?.task as { title?: string } | undefined;
+      announceToScreenReader(`Picked up task: ${task?.title || activeIdStr}`);
+    } else {
+      announceToScreenReader(`Picked up column: ${activeIdStr}`);
+    }
   }, []);
 
   const handleDragOver = useCallback((_event: DragOverEvent) => {
@@ -57,7 +66,10 @@ export default function KanbanBoard({ searchQuery = '' }: { searchQuery?: string
     setActiveId(null);
     setActiveType(null);
 
-    if (!over || !currentBoard?.columns) return;
+    if (!over || !currentBoard?.columns) {
+      announceToScreenReader('Drag cancelled.');
+      return;
+    }
 
     const activeIdStr = String(active.id);
     const overIdStr = String(over.id);
@@ -65,13 +77,17 @@ export default function KanbanBoard({ searchQuery = '' }: { searchQuery?: string
 
     // --- Column reorder ---
     if (activeDataType === 'column') {
-      if (activeIdStr === overIdStr) return;
+      if (activeIdStr === overIdStr) {
+        announceToScreenReader('Column dropped in same position.');
+        return;
+      }
 
       const newIndex = currentBoard.columns.findIndex((c) => c.id === overIdStr);
       if (newIndex < 0) return;
 
       try {
         await moveColumnOptimistic(activeIdStr, newIndex);
+        announceToScreenReader(`Column moved to position ${newIndex + 1}.`);
       } catch {
         toast.error('Gagal mengurutkan ulang kolom. Silakan coba lagi.');
       }
@@ -88,13 +104,15 @@ export default function KanbanBoard({ searchQuery = '' }: { searchQuery?: string
     if (overData?.type === 'task') {
       overColumnId = overData.columnId as string;
     } else if (overData?.type === 'column') {
-      // Dropped directly on a column (empty column or column header)
       overColumnId = overIdStr;
     } else {
       return;
     }
 
-    if (activeIdStr === overIdStr) return;
+    if (activeIdStr === overIdStr) {
+      announceToScreenReader('Task dropped in same position.');
+      return;
+    }
 
     const toColumn = currentBoard.columns.find((c) => c.id === overColumnId);
     if (!toColumn) return;
@@ -106,6 +124,7 @@ export default function KanbanBoard({ searchQuery = '' }: { searchQuery?: string
 
     try {
       await moveTaskOptimistic(activeIdStr, activeColumn.id, overColumnId, newPosition);
+      announceToScreenReader(`Task moved to ${toColumn.title}.`);
     } catch {
       toast.error('Gagal memindahkan task. Silakan coba lagi.');
     }
