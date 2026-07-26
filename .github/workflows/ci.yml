@@ -5,10 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:        # manual trigger for Docker builds
 
 env:
   GO_VERSION: '1.24'
-  NODE_VERSION: '20'
+  NODE_VERSION: '22'
 
 jobs:
   # ── Backend: lint & build ──────────────────────────────────────
@@ -28,6 +29,9 @@ jobs:
 
       - name: Vet
         run: go vet ./...
+
+      - name: Test
+        run: go test ./...
 
       - name: Build
         run: go build -o /dev/null ./...
@@ -56,39 +60,26 @@ jobs:
         run: npm run lint
         continue-on-error: true
 
+      - name: Test
+        run: npm run test
+
       - name: Build
         run: npm run build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8080
 
-  # ── Build & push Docker images (main only) ─────────────────────
+  # ── Docker images (manual trigger only) ────────────────────────
   docker:
-    name: Docker — Build & Push
+    name: Docker — Build Images
     runs-on: ubuntu-latest
     needs: [backend, frontend]
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Build backend image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./backend
-          push: false
-          tags: kanban-backend:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        run: docker build -t kanban-backend ./backend
 
       - name: Build frontend image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./frontend
-          file: ./frontend/frontend/Dockerfile
-          push: false
-          tags: kanban-frontend:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        run: docker build -t kanban-frontend -f ./frontend/frontend/Dockerfile ./frontend
