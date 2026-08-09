@@ -32,11 +32,11 @@ Dokumen ini adalah **checklist teknis** supaya app jadi SaaS beneran, bukan cuma
 - [x] **Frontend switcher** — `WorkspaceSwitcher.tsx` (fetch `/api/workspaces`, create, select → `localStorage` + `workspace-changed` event) di `Navbar` (sm) & `boards/page` (responsive) + `store` support `workspace_id` di `fetchBoards/createBoard`
 - [ ] **Member panel scope** — masih `board_members` (next: pindah ke `workspace_members` + inherit)
 
-## 3) Invites & Sharing
-- [ ] **Invite CRUD** — `POST /workspaces/:id/invites`, `GET /invites/:token`, `POST /invites/:token/accept|decline`, `DELETE revoke`; hash token SHA256, expiry 7d
-- [ ] **Email invite** — `mailInvite` dengan link `APP_URL/invite/:token`
-- [ ] **Accept flow** — jika user belum ada → redirect register + auto-accept setelah verify
-- [ ] **Frontend** — halaman `/invite/:token` + banner pending invites di boards
+## 3) Invites & Sharing — Sudah
+- [x] **Invite CRUD** — `POST /workspaces/:id/invites`, `GET /invites/:token`, `POST /invites/:token/accept|decline`, `DELETE revoke`; hash token SHA256, expiry 7d
+- [x] **Email invite** — `mailInvite` dengan link `APP_URL/invite/:token`
+- [x] **Accept flow** — jika user belum ada → redirect register + auto-accept setelah verify
+- [x] **Frontend** — halaman `/invite/:token` + banner pending invites di boards
 
 ## 4) Billing & Entitlements (Stripe)
 - [ ] **Env & keys** — `STRIPE_SECRET`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_SCALE`

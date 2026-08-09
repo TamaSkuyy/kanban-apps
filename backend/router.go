@@ -237,6 +237,7 @@ func NewRouter(db *pgxpool.Pool) *gin.Engine {
 	auth.GET("/me", s.jwtMiddleware(), s.me)
 
 	api.POST("/webhooks/stripe", s.stripeWebhook)
+	api.GET("/invites/:token", s.getInvite)
 
 	protected := api.Group("")
 	protected.Use(s.jwtMiddleware())
@@ -267,6 +268,13 @@ func NewRouter(db *pgxpool.Pool) *gin.Engine {
 	protected.GET("/workspaces/:id/boards", s.listBoardsByWorkspace)
 	protected.GET("/workspaces/:id/members", s.listWorkspaceMembers)
 	protected.POST("/workspaces/:id/members", s.addWorkspaceMember)
+	protected.POST("/workspaces/:id/invites", s.createInvite)
+	protected.GET("/workspaces/:id/invites", s.listInvites)
+	protected.DELETE("/workspaces/:id/invites/:inviteId", s.revokeInvite)
+	protected.GET("/me/invites", s.listMyInvites)
+	protected.POST("/invites/by-id/:inviteId/accept", s.acceptInviteByID)
+	protected.POST("/invites/:token/accept", s.acceptInvite)
+	protected.POST("/invites/:token/decline", s.declineInvite)
 	protected.POST("/billing/checkout", s.billingCheckout)
 	protected.POST("/billing/portal", s.billingPortal)
 

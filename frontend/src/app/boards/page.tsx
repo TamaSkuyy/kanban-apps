@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState, useRef, useMemo } from 'react';
-import { Plus, Search, LayoutGrid, List, Clock3, ChevronRight } from 'lucide-react';
+import { Plus, Search, LayoutGrid, List, Clock3, ChevronRight, Building2, Check, X } from 'lucide-react';
 import BoardCard from '../components/BoardCard';
 import WorkspaceSwitcher from '../components/WorkspaceSwitcher';
 import { useKanbanStore } from '../lib/store';
@@ -14,15 +14,19 @@ export default function BoardsPage() {
   const [query, setQuery] = useState('');
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [hasWorkspace, setHasWorkspace] = useState<boolean | null>(null);
+  const [pendingInvites, setPendingInvites] = useState<{ id: string; workspace_id: string; workspace_name: string; role: string }[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchBoards();
-    // check workspaces for warning
+    // check workspaces for warning + pending invites
     import('../lib/api').then(({ apiFetch }) => {
       apiFetch<{ workspaces: unknown[] }>('/api/workspaces')
         .then((d) => setHasWorkspace(d.workspaces.length > 0))
         .catch(() => setHasWorkspace(true));
+      apiFetch<{ invites: { id: string; workspace_id: string; workspace_name: string; role: string }[] }>('/api/me/invites')
+        .then((d) => setPendingInvites(d.invites))
+        .catch(() => {});
     });
     const handler = (e: Event) => {
       const id = (e as CustomEvent).detail as string;
@@ -99,6 +103,47 @@ export default function BoardsPage() {
               <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Belum ada workspace</p>
               <p className="mt-1 text-sm leading-6 text-amber-700 dark:text-amber-400">Buat workspace dulu sebelum bikin board. Board tanpa workspace tidak akan muncul di daftar workspace.</p>
               <p className="mt-2 text-xs text-amber-600 dark:text-amber-500">Tip: pilih “Buat workspace” di switcher di atas.</p>
+            </div>
+          )}
+
+          {pendingInvites.length > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+              <p className="flex items-center gap-2 text-sm font-medium text-slate-900 dark:text-white">
+                <Building2 className="h-4 w-4 text-slate-500" /> Undangan workspace ({pendingInvites.length})
+              </p>
+              <ul className="mt-3 space-y-2">
+                {pendingInvites.map((inv) => (
+                  <li key={inv.id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800">
+                    <span className="flex-1 text-sm text-slate-700 dark:text-slate-300">
+                      <span className="font-medium text-slate-900 dark:text-white">{inv.workspace_name}</span> — sebagai {inv.role}
+                    </span>
+                    <button
+                      onClick={async () => {
+                        const { apiFetch } = await import('../lib/api');
+                        await apiFetch(`/api/invites/by-id/${inv.id}/accept`, { method: 'POST' });
+                        setPendingInvites((prev) => prev.filter((p) => p.id !== inv.id));
+                        // refresh workspaces
+                        window.dispatchEvent(new CustomEvent('workspace-changed', { detail: inv.workspace_id }));
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-black dark:bg-white dark:text-slate-900"
+                    >
+                      <Check className="h-3.5 w-3.5" /> Terima
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const { apiFetch } = await import('../lib/api');
+                        await apiFetch(`/api/invites/${inv.id}/decline` as any, { method: 'POST' }).catch(async () => {
+                          await apiFetch(`/api/workspaces/${inv.workspace_id}/invites/${inv.id}`, { method: 'DELETE' } as any);
+                        });
+                        setPendingInvites((prev) => prev.filter((p) => p.id !== inv.id));
+                      }}
+                      className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

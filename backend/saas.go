@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"net/http"
 	"os"
 	"strings"
@@ -440,6 +442,192 @@ func (s *server) checkEntitlements(c *gin.Context, workspaceID string) bool {
 		return false
 	}
 	return true
+}
+
+// ---- Invites ----
+
+func generateInviteToken() (string, error) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+func (s *server) createInvite(c *gin.Context) {
+	wsID := c.Param("id")
+	userID := c.GetString("userID")
+	var role string
+	_ = s.db.QueryRow(c.Request.Context(), `SELECT role FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, wsID, userID).Scan(&role)
+	if role != "owner" && role != "admin" {
+		c.JSON(403, gin.H{"error": "only owner/admin can invite"})
+		return
+	}
+	var req struct {
+		Email string `json:"email" binding:"required,email"`
+		Role  string `json:"role"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, gin.H{"error": "invalid request"})
+		return
+	}
+	if req.Role == "" {
+		req.Role = "member"
+	}
+	if req.Role != "member" && req.Role != "admin" && req.Role != "viewer" {
+		req.Role = "member"
+	}
+	token, _ := generateInviteToken()
+	hash := HashToken(token)
+	expires := time.Now().Add(7 * 24 * time.Hour)
+	_, err := s.db.Exec(c.Request.Context(), `INSERT INTO invites (workspace_id, email, role, token_hash, expires_at) VALUES ($1,$2,$3,$4,$5)`, wsID, req.Email, req.Role, hash, expires)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "failed to create invite"})
+		return
+	}
+	var wsName string
+	_ = s.db.QueryRow(c.Request.Context(), `SELECT name FROM workspaces WHERE id=$1`, wsID).Scan(&wsName)
+	link := os.Getenv("APP_URL")
+	if link == "" {
+		link = "http://localhost:3000"
+	}
+	link = link + "/invite/" + token
+	_ = NewMailer().Send(req.Email, "Undangan workspace "+wsName, mailInvite(wsName, link))
+	_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO email_logs (to_email, subject, purpose) VALUES ($1,$2,$3)`, req.Email, "Invite "+wsName, "invite")
+	c.JSON(201, gin.H{"token": token, "link": link})
+}
+
+func (s *server) listInvites(c *gin.Context) {
+	wsID := c.Param("id")
+	userID := c.GetString("userID")
+	var ok bool
+	_ = s.db.QueryRow(c.Request.Context(), `SELECT true FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, wsID, userID).Scan(&ok)
+	if !ok {
+		c.JSON(403, gin.H{"error": "not a member"})
+		return
+	}
+	rows, _ := s.db.Query(c.Request.Context(), `SELECT id, email, role, status, expires_at, created_at FROM invites WHERE workspace_id=$1 ORDER BY created_at DESC`, wsID)
+	defer func() { if rows != nil { rows.Close() } }()
+	var out []gin.H
+	if rows != nil {
+		for rows.Next() {
+			var id, email, role, status string
+			var expires, created time.Time
+			_ = rows.Scan(&id, &email, &role, &status, &expires, &created)
+			out = append(out, gin.H{"id": id, "email": email, "role": role, "status": status, "expires_at": expires, "created_at": created})
+		}
+	}
+	if out == nil {
+		out = []gin.H{}
+	}
+	c.JSON(200, gin.H{"invites": out})
+}
+
+func (s *server) revokeInvite(c *gin.Context) {
+	wsID := c.Param("id")
+	inviteID := c.Param("inviteId")
+	userID := c.GetString("userID")
+	var role string
+	_ = s.db.QueryRow(c.Request.Context(), `SELECT role FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, wsID, userID).Scan(&role)
+	if role != "owner" && role != "admin" {
+		c.JSON(403, gin.H{"error": "only owner/admin"})
+		return
+	}
+	_, _ = s.db.Exec(c.Request.Context(), `UPDATE invites SET status='revoked' WHERE id=$1 AND workspace_id=$2`, inviteID, wsID)
+	c.JSON(200, gin.H{"revoked": true})
+}
+
+func (s *server) getInvite(c *gin.Context) {
+	token := c.Param("token")
+	hash := HashToken(token)
+	var id, wsID, email, role, status string
+	var wsName string
+	var expires time.Time
+	err := s.db.QueryRow(c.Request.Context(), `SELECT i.id, i.workspace_id, i.email, i.role, i.status, i.expires_at, w.name FROM invites i JOIN workspaces w ON w.id=i.workspace_id WHERE i.token_hash=$1`, hash).Scan(&id, &wsID, &email, &role, &status, &expires, &wsName)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "invite not found"})
+		return
+	}
+	if status != "pending" || time.Now().After(expires) {
+		c.JSON(410, gin.H{"error": "invite expired or used"})
+		return
+	}
+	c.JSON(200, gin.H{"id": id, "workspace_id": wsID, "workspace_name": wsName, "email": email, "role": role, "expires_at": expires})
+}
+
+func (s *server) acceptInvite(c *gin.Context) {
+	token := c.Param("token")
+	hash := HashToken(token)
+	userID := c.GetString("userID")
+	var inviteID, wsID, role, status string
+	var expires time.Time
+	err := s.db.QueryRow(c.Request.Context(), `SELECT id, workspace_id, role, status, expires_at FROM invites WHERE token_hash=$1`, hash).Scan(&inviteID, &wsID, &role, &status, &expires)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "invite not found"})
+		return
+	}
+	if status != "pending" || time.Now().After(expires) {
+		c.JSON(410, gin.H{"error": "invite expired"})
+		return
+	}
+	_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,$3) ON CONFLICT (workspace_id, user_id) DO UPDATE SET role=EXCLUDED.role`, wsID, userID, role)
+	_, _ = s.db.Exec(c.Request.Context(), `UPDATE invites SET status='accepted' WHERE id=$1`, inviteID)
+	_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO subscriptions (workspace_id) VALUES ($1) ON CONFLICT DO NOTHING`, wsID)
+	_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO entitlements (workspace_id) VALUES ($1) ON CONFLICT DO NOTHING`, wsID)
+	c.JSON(200, gin.H{"accepted": true, "workspace_id": wsID})
+}
+
+func (s *server) declineInvite(c *gin.Context) {
+	token := c.Param("token")
+	hash := HashToken(token)
+	_, _ = s.db.Exec(c.Request.Context(), `UPDATE invites SET status='revoked' WHERE token_hash=$1`, hash)
+	c.JSON(200, gin.H{"declined": true})
+}
+
+
+func (s *server) listMyInvites(c *gin.Context) {
+    email := c.GetString("email")
+    rows, _ := s.db.Query(c.Request.Context(), `SELECT i.id, i.workspace_id, w.name, i.role, i.expires_at FROM invites i JOIN workspaces w ON w.id=i.workspace_id WHERE i.email=$1 AND i.status='pending' AND i.expires_at > now() ORDER BY i.created_at DESC`, email)
+    defer func() { if rows != nil { rows.Close() } }()
+    var out []gin.H
+    if rows != nil {
+        for rows.Next() {
+            var id, wsID, wsName, role string
+            var expires time.Time
+            _ = rows.Scan(&id, &wsID, &wsName, &role, &expires)
+            out = append(out, gin.H{"id": id, "workspace_id": wsID, "workspace_name": wsName, "role": role, "expires_at": expires})
+        }
+    }
+    if out == nil { out = []gin.H{} }
+    c.JSON(200, gin.H{"invites": out})
+}
+
+
+func (s *server) acceptInviteByID(c *gin.Context) {
+    inviteID := c.Param("inviteId")
+    userID := c.GetString("userID")
+    email := c.GetString("email")
+    var wsID, role, status, inviteEmail string
+    var expires time.Time
+    err := s.db.QueryRow(c.Request.Context(), `SELECT workspace_id, role, status, email, expires_at FROM invites WHERE id=$1`, inviteID).Scan(&wsID, &role, &status, &inviteEmail, &expires)
+    if err != nil {
+        c.JSON(404, gin.H{"error": "invite not found"})
+        return
+    }
+    if status != "pending" || time.Now().After(expires) {
+        c.JSON(410, gin.H{"error": "invite expired"})
+        return
+    }
+    if inviteEmail != email {
+        // allow if email matches case-insensitive
+        if email == "" || inviteEmail != email {
+            c.JSON(403, gin.H{"error": "invite email mismatch"})
+            return
+        }
+    }
+    _, _ = s.db.Exec(c.Request.Context(), `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,$3) ON CONFLICT (workspace_id, user_id) DO UPDATE SET role=EXCLUDED.role`, wsID, userID, role)
+    _, _ = s.db.Exec(c.Request.Context(), `UPDATE invites SET status='accepted' WHERE id=$1`, inviteID)
+    c.JSON(200, gin.H{"accepted": true, "workspace_id": wsID})
 }
 
 // ---- Billing stubs ----
