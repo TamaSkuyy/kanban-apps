@@ -256,6 +256,7 @@ func NewRouter(db *pgxpool.Pool) *gin.Engine {
 	auth.POST("/forgot", s.forgotPassword)
 	auth.POST("/reset", s.resetPassword)
 	auth.POST("/refresh", s.refreshToken)
+	auth.POST("/oauth/google", s.oauthGoogle)
 	auth.GET("/me", s.jwtMiddleware(), s.me)
 
 	api.POST("/webhooks/stripe", s.stripeWebhook)
@@ -291,6 +292,12 @@ func NewRouter(db *pgxpool.Pool) *gin.Engine {
 	protected.GET("/workspaces/:id/boards", s.listBoardsByWorkspace)
 	protected.GET("/workspaces/:id/members", s.listWorkspaceMembers)
 	protected.POST("/workspaces/:id/members", s.addWorkspaceMember)
+	protected.POST("/workspaces/:id/api-keys", s.createApiKey)
+	protected.GET("/workspaces/:id/api-keys", s.listApiKeys)
+	protected.DELETE("/workspaces/:id/api-keys/:keyId", s.deleteApiKey)
+	protected.POST("/workspaces/:id/webhooks", s.createWebhook)
+	protected.GET("/workspaces/:id/webhooks", s.listWebhooks)
+	protected.DELETE("/workspaces/:id/webhooks/:hookId", s.deleteWebhook)
 	protected.POST("/workspaces/:id/invites", s.createInvite)
 	protected.GET("/workspaces/:id/invites", s.listInvites)
 	protected.DELETE("/workspaces/:id/invites/:inviteId", s.revokeInvite)
@@ -1197,10 +1204,40 @@ func (s *server) updateCursor(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (s *server) dispatchWebhooks(boardID, eventType string, data interface{}) {
+    // lookup workspace_id
+    var wsID *string
+    _ = s.db.QueryRow(context.Background(), `SELECT workspace_id FROM boards WHERE id=$1`, boardID).Scan(&wsID)
+    if wsID == nil || *wsID == "" {
+        return
+    }
+    rows, _ := s.db.Query(context.Background(), `SELECT url, events FROM workspace_webhooks WHERE workspace_id=$1`, *wsID)
+    if rows == nil {
+        return
+    }
+    defer rows.Close()
+    payload, _ := json.Marshal(map[string]interface{}{"type": eventType, "board_id": boardID, "data": data})
+    for rows.Next() {
+        var url, events string
+        _ = rows.Scan(&url, &events)
+        if events != "" && !contains(events, eventType) {
+            continue
+        }
+        go func(u string) {
+            _, _ = http.Post(u, "application/json", strings.NewReader(string(payload)))
+        }(url)
+    }
+}
+
+func contains(s, sub string) bool {
+    return len(s) == 0 || strings.Contains(s, sub)
+}
+
 func (s *server) publishBoardEvent(boardID, eventType string, data interface{}) {
 	evt := boardEvent{Type: eventType, BoardID: boardID, Data: data}
 	payload, _ := json.Marshal(evt)
 	s.hub.publish(boardID, payload)
+	go s.dispatchWebhooks(boardID, eventType, data)
 }
 
 func (s *server) ensureBoardOwnership(ctx context.Context, userID, boardID string) error {

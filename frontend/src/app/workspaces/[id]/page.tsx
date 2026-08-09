@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Building2, Users, Trash2, Pencil, Shield, Mail, Layers, Plus, CreditCard } from 'lucide-react';
+import { ArrowLeft, Building2, Users, Trash2, Pencil, Shield, Mail, Layers, Plus, CreditCard, Key, Webhook, Globe } from 'lucide-react';
 import { apiFetch } from '../../lib/api';
 
 type Workspace = { id: string; slug: string; name: string; owner_id: string };
@@ -23,12 +23,19 @@ export default function WorkspaceDetailPage() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'member' | 'admin' | 'viewer'>('member');
   const [billing, setBilling] = useState<{ plan: string; status: string; entitlements: { max_boards: number; max_members: number } } | null>(null);
+  const [regionDraft, setRegionDraft] = useState('');
+  const [apiKeys, setApiKeys] = useState<{ id: string; name: string; created_at: string }[]>([]);
+  const [webhooks, setWebhooks] = useState<{ id: string; url: string; events: string }[]>([]);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [newHookUrl, setNewHookUrl] = useState('');
 
   async function load() {
+    let w: Workspace | null = null;
     try {
-      const w = await apiFetch<Workspace>(`/api/workspaces/${wsId}`);
+      w = await apiFetch<Workspace>(`/api/workspaces/${wsId}`);
       setWs(w);
       setNameDraft(w.name);
+      setRegionDraft((w as any).region || 'id-jakarta-1');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Gagal load workspace');
       return;
@@ -45,6 +52,14 @@ export default function WorkspaceDetailPage() {
       const s = await apiFetch<{ plan: string; status: string; entitlements: { max_boards: number; max_members: number } }>(`/api/billing/subscription?workspace_id=${wsId}`);
       setBilling(s as any);
     } catch {}
+    try {
+      const k = await apiFetch<{ keys: { id: string; name: string; created_at: string }[] }>(`/api/workspaces/${wsId}/api-keys`);
+      setApiKeys(k.keys);
+    } catch {}
+    try {
+      const h = await apiFetch<{ webhooks: { id: string; url: string; events: string }[] }>(`/api/workspaces/${wsId}/webhooks`);
+      setWebhooks(h.webhooks);
+    } catch {}
   }
 
   useEffect(() => {
@@ -55,7 +70,7 @@ export default function WorkspaceDetailPage() {
   async function save() {
     if (!nameDraft.trim()) return;
     try {
-      await apiFetch(`/api/workspaces/${wsId}`, { method: 'PUT', body: JSON.stringify({ name: nameDraft.trim() }) });
+      await apiFetch(`/api/workspaces/${wsId}`, { method: 'PUT', body: JSON.stringify({ name: nameDraft.trim(), region: regionDraft }) });
       setWs((prev) => (prev ? { ...prev, name: nameDraft.trim() } : prev));
       setEditing(false);
     } catch (e) {
@@ -116,8 +131,13 @@ export default function WorkspaceDetailPage() {
               </span>
               <div>
                 {editing ? (
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-base font-semibold dark:border-slate-600 dark:bg-slate-800 dark:text-white" autoFocus onKeyDown={(e) => e.key === 'Enter' && save()} />
+                    <select value={regionDraft} onChange={(e) => setRegionDraft(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+                      <option value="id-jakarta-1">id-jakarta-1</option>
+                      <option value="sg-singapore-1">sg-singapore-1</option>
+                      <option value="us-west-1">us-west-1</option>
+                    </select>
                     <button onClick={save} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white dark:bg-white dark:text-slate-900">Simpan</button>
                     <button onClick={() => setEditing(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm dark:border-slate-700 dark:text-slate-300">Batal</button>
                   </div>
@@ -221,6 +241,51 @@ export default function WorkspaceDetailPage() {
             <button onClick={async () => { await apiFetch('/api/billing/checkout', { method: 'POST', body: JSON.stringify({ workspace_id: wsId, plan: 'pro' }) }); location.reload(); }} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-black dark:bg-white dark:text-slate-900">Upgrade ke Pro</button>
             <a href="/billing" className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Lihat semua paket</a>
           </div>
+        </div>
+
+        {/* API Keys */}
+        <div className="mt-6 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+            <Key className="h-4 w-4" /> API Keys
+          </h2>
+          <div className="mt-3 flex gap-2">
+            <input value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)} placeholder="Nama key" className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            <button onClick={async () => { const r = await apiFetch<{ key: string }>(`/api/workspaces/${wsId}/api-keys`, { method: 'POST', body: JSON.stringify({ name: newKeyName || 'default' }) }); alert('Key (salin sekali): ' + r.key); setNewKeyName(''); const k = await apiFetch<{ keys: any[] }>(`/api/workspaces/${wsId}/api-keys`); setApiKeys(k.keys); }} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-slate-900">Buat</button>
+          </div>
+          <ul className="mt-3 space-y-1">
+            {apiKeys.map((k) => (
+              <li key={k.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                <span className="font-medium text-slate-900 dark:text-white">{k.name}</span>
+                <button onClick={async () => { await apiFetch(`/api/workspaces/${wsId}/api-keys/${k.id}`, { method: 'DELETE' }); setApiKeys((prev) => prev.filter((x) => x.id !== k.id)); }} className="text-xs text-red-600 hover:underline">Hapus</button>
+              </li>
+            ))}
+            {apiKeys.length === 0 && <p className="text-xs text-slate-500">Belum ada key.</p>}
+          </ul>
+        </div>
+
+        {/* Webhooks */}
+        <div className="mt-6 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+            <Webhook className="h-4 w-4" /> Webhooks
+          </h2>
+          <div className="mt-3 flex gap-2">
+            <input value={newHookUrl} onChange={(e) => setNewHookUrl(e.target.value)} placeholder="https://contoh.com/hook" className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            <button onClick={async () => { await apiFetch(`/api/workspaces/${wsId}/webhooks`, { method: 'POST', body: JSON.stringify({ url: newHookUrl }) }); setNewHookUrl(''); const h = await apiFetch<{ webhooks: any[] }>(`/api/workspaces/${wsId}/webhooks`); setWebhooks(h.webhooks); }} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-slate-900">Tambah</button>
+          </div>
+          <ul className="mt-3 space-y-1">
+            {webhooks.map((h) => (
+              <li key={h.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                <span className="truncate text-slate-700 dark:text-slate-300">{h.url} <span className="text-xs text-slate-500">({h.events})</span></span>
+                <button onClick={async () => { await apiFetch(`/api/workspaces/${wsId}/webhooks/${h.id}`, { method: 'DELETE' }); setWebhooks((prev) => prev.filter((x) => x.id !== h.id)); }} className="text-xs text-red-600 hover:underline">Hapus</button>
+              </li>
+            ))}
+            {webhooks.length === 0 && <p className="text-xs text-slate-500">Belum ada webhook. Event: task.created, board.created etc akan POST ke URL.</p>}
+          </ul>
+        </div>
+
+        {/* Data Residency */}
+        <div className="mt-6 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+          <Globe className="h-4 w-4" /> Residency: <span className="font-medium text-slate-900 dark:text-white">{(ws as any).region || 'id-jakarta-1'}</span> — atur via Edit di atas.
         </div>
       </div>
     </div>

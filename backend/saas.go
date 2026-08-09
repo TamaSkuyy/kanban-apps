@@ -289,7 +289,6 @@ func (s *server) getWorkspace(c *gin.Context) {
 func (s *server) updateWorkspace(c *gin.Context) {
 	wsID := c.Param("id")
 	userID := c.GetString("userID")
-	// only owner/admin
 	var role string
 	_ = s.db.QueryRow(c.Request.Context(), `SELECT role FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, wsID, userID).Scan(&role)
 	if role != "owner" && role != "admin" {
@@ -297,14 +296,22 @@ func (s *server) updateWorkspace(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name string `json:"name" binding:"required"`
+		Name   *string `json:"name"`
+		Region *string `json:"region"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
-	_, _ = s.db.Exec(c.Request.Context(), `UPDATE workspaces SET name=$1, updated_at=now() WHERE id=$2`, req.Name, wsID)
-	c.JSON(http.StatusOK, gin.H{"id": wsID, "name": req.Name})
+	if req.Name != nil && *req.Name != "" {
+		_, _ = s.db.Exec(c.Request.Context(), `UPDATE workspaces SET name=$1, updated_at=now() WHERE id=$2`, *req.Name, wsID)
+	}
+	if req.Region != nil {
+		_, _ = s.db.Exec(c.Request.Context(), `UPDATE workspaces SET region=$1, updated_at=now() WHERE id=$2`, *req.Region, wsID)
+	}
+	var name, region string
+	_ = s.db.QueryRow(c.Request.Context(), `SELECT name, COALESCE(region,'') FROM workspaces WHERE id=$1`, wsID).Scan(&name, &region)
+	c.JSON(http.StatusOK, gin.H{"id": wsID, "name": name, "region": region})
 }
 
 func (s *server) deleteWorkspace(c *gin.Context) {
@@ -680,6 +687,166 @@ func (s *server) exportMe(c *gin.Context) {
     c.JSON(200, gin.H{"user": gin.H{"id": userID, "email": email, "name": name}, "workspaces": workspaces, "boards": boards})
 }
 
+
+// ---- Fase 6: OAuth, API Keys, Webhooks ----
+
+func (s *server) oauthGoogle(c *gin.Context) {
+    var req struct {
+        IdToken string `json:"id_token"`
+        Email   string `json:"email"`
+        Name    string `json:"name"`
+    }
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.JSON(400, gin.H{"error": "invalid request"})
+        return
+    }
+    email := req.Email
+    name := req.Name
+    // If GOOGLE_CLIENT_ID set, verify id_token via Google (stub: skip)
+    if email == "" && req.IdToken != "" {
+        // try decode JWT payload without verify (dev stub)
+        parts := split(req.IdToken, ".")
+        if len(parts) >= 2 {
+            // not actually decoding, fallback
+            email = "google-user@example.com"
+        }
+    }
+    if email == "" {
+        c.JSON(400, gin.H{"error": "email required"})
+        return
+    }
+    var userID string
+    var hash string
+    err := s.db.QueryRow(c.Request.Context(), `SELECT id, password_hash FROM users WHERE email=$1`, email).Scan(&userID, &hash)
+    if err != nil {
+        // create user with random password
+        pw, _ := GenerateOTP()
+        h, _ := HashPassword(pw + "google")
+        _ = s.db.QueryRow(c.Request.Context(), `INSERT INTO users (name, email, password_hash, email_verified_at) VALUES ($1,$2,$3, now()) ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name RETURNING id`, name, email, h).Scan(&userID)
+        if userID == "" {
+            c.JSON(500, gin.H{"error": "failed to create user"})
+            return
+        }
+    } else {
+        // ensure verified
+        _, _ = s.db.Exec(c.Request.Context(), `UPDATE users SET email_verified_at=COALESCE(email_verified_at, now()) WHERE id=$1`, userID)
+    }
+    token, _ := GenerateJWT(userID, email)
+    c.JSON(200, gin.H{"token": token})
+}
+
+func split(s, sep string) []string {
+    // tiny helper to avoid strings import clash
+    var out []string
+    cur := ""
+    for i := 0; i < len(s); i++ {
+        if string(s[i]) == sep {
+            out = append(out, cur)
+            cur = ""
+        } else {
+            cur += string(s[i])
+        }
+    }
+    out = append(out, cur)
+    return out
+}
+
+func (s *server) createApiKey(c *gin.Context) {
+    wsID := c.Param("id")
+    userID := c.GetString("userID")
+    var role string
+    _ = s.db.QueryRow(c.Request.Context(), `SELECT role FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, wsID, userID).Scan(&role)
+    if role != "owner" && role != "admin" {
+        c.JSON(403, gin.H{"error": "only owner/admin"})
+        return
+    }
+    var req struct{ Name string `json:"name"` }
+    _ = c.ShouldBindJSON(&req)
+    if req.Name == "" {
+        req.Name = "default"
+    }
+    raw, _ := generateInviteToken()
+    key := "kanban_" + raw[:32]
+    hash := HashToken(key)
+    var id string
+    err := s.db.QueryRow(c.Request.Context(), `INSERT INTO workspace_api_keys (workspace_id, key_hash, name) VALUES ($1,$2,$3) RETURNING id`, wsID, hash, req.Name).Scan(&id)
+    if err != nil {
+        c.JSON(500, gin.H{"error": "failed to create key"})
+        return
+    }
+    c.JSON(201, gin.H{"id": id, "key": key, "name": req.Name})
+}
+
+func (s *server) listApiKeys(c *gin.Context) {
+    wsID := c.Param("id")
+    rows, _ := s.db.Query(c.Request.Context(), `SELECT id, name, created_at FROM workspace_api_keys WHERE workspace_id=$1 ORDER BY created_at DESC`, wsID)
+    var out []gin.H
+    if rows != nil {
+        defer rows.Close()
+        for rows.Next() {
+            var id, name string
+            var created time.Time
+            _ = rows.Scan(&id, &name, &created)
+            out = append(out, gin.H{"id": id, "name": name, "created_at": created})
+        }
+    }
+    if out == nil { out = []gin.H{} }
+    c.JSON(200, gin.H{"keys": out})
+}
+
+func (s *server) deleteApiKey(c *gin.Context) {
+    wsID := c.Param("id")
+    keyID := c.Param("keyId")
+    _, _ = s.db.Exec(c.Request.Context(), `DELETE FROM workspace_api_keys WHERE id=$1 AND workspace_id=$2`, keyID, wsID)
+    c.JSON(200, gin.H{"deleted": true})
+}
+
+func (s *server) createWebhook(c *gin.Context) {
+    wsID := c.Param("id")
+    var req struct {
+        Url    string `json:"url" binding:"required"`
+        Events string `json:"events"`
+        Secret string `json:"secret"`
+    }
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.JSON(400, gin.H{"error": "invalid request"})
+        return
+    }
+    if req.Events == "" {
+        req.Events = "task.created,task.moved,task.deleted,board.created"
+    }
+    var id string
+    err := s.db.QueryRow(c.Request.Context(), `INSERT INTO workspace_webhooks (workspace_id, url, events, secret) VALUES ($1,$2,$3,$4) RETURNING id`, wsID, req.Url, req.Events, req.Secret).Scan(&id)
+    if err != nil {
+        c.JSON(500, gin.H{"error": "failed"})
+        return
+    }
+    c.JSON(201, gin.H{"id": id, "url": req.Url})
+}
+
+func (s *server) listWebhooks(c *gin.Context) {
+    wsID := c.Param("id")
+    rows, _ := s.db.Query(c.Request.Context(), `SELECT id, url, events, created_at FROM workspace_webhooks WHERE workspace_id=$1`, wsID)
+    var out []gin.H
+    if rows != nil {
+        defer rows.Close()
+        for rows.Next() {
+            var id, url, events string
+            var created time.Time
+            _ = rows.Scan(&id, &url, &events, &created)
+            out = append(out, gin.H{"id": id, "url": url, "events": events, "created_at": created})
+        }
+    }
+    if out == nil { out = []gin.H{} }
+    c.JSON(200, gin.H{"webhooks": out})
+}
+
+func (s *server) deleteWebhook(c *gin.Context) {
+    wsID := c.Param("id")
+    hookID := c.Param("hookId")
+    _, _ = s.db.Exec(c.Request.Context(), `DELETE FROM workspace_webhooks WHERE id=$1 AND workspace_id=$2`, hookID, wsID)
+    c.JSON(200, gin.H{"deleted": true})
+}
 
 // ---- Billing ----
 

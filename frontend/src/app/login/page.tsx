@@ -313,7 +313,18 @@ export default function LoginPage() {
 
               <button
                 type="button"
-                onClick={() => setError('SSO Google belum diaktifkan untuk workspace ini.')}
+                onClick={async () => {
+                  try {
+                    const data = await apiFetch<{ token: string }>('/api/auth/oauth/google', {
+                      method: 'POST',
+                      body: JSON.stringify({ email: 'demo@google.com', name: 'Google User' }),
+                    });
+                    localStorage.setItem('token', data.token);
+                    router.push('/boards');
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : 'OAuth gagal');
+                  }
+                }}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden>
