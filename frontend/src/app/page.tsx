@@ -1,7 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { useTheme } from 'next-themes';
+import { apiFetch } from './lib/api';
 import {
   Columns3,
   Check,
@@ -19,6 +22,30 @@ import {
 
 export default function Home() {
   const { theme, setTheme } = useTheme();
+  const router = useRouter();
+  const [upgrading, setUpgrading] = useState(false);
+  async function handleProCheckout() {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) { router.push('/register'); return; }
+    setUpgrading(true);
+    try {
+      let wsId = localStorage.getItem('workspace_id') || '';
+      if (!wsId) {
+        const d = await apiFetch<{ workspaces: { id: string }[] }>('/api/workspaces');
+        wsId = d.workspaces[0]?.id || '';
+        if (wsId) localStorage.setItem('workspace_id', wsId);
+      }
+      if (!wsId) { router.push('/boards'); return; }
+      const res = await apiFetch<{ url: string }>(`/api/billing/checkout`, { method: 'POST', body: JSON.stringify({ workspace_id: wsId, plan: 'pro' }) });
+      if (res.url && res.url.startsWith('/')) router.push(res.url);
+      else if (res.url) window.location.href = res.url;
+      else router.push('/billing');
+    } catch {
+      router.push('/billing');
+    } finally {
+      setUpgrading(false);
+    }
+  }
   return (
     <div className="min-h-screen bg-white text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
       {/* Header — same system as login/register */}
@@ -420,9 +447,9 @@ export default function Home() {
               <li className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400 dark:text-emerald-600" /> Timeline & workload</li>
               <li className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400 dark:text-emerald-600" /> Retensi & ekspor</li>
             </ul>
-            <Link href="/register" className="mt-6 inline-flex justify-center rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-slate-900 hover:bg-slate-50 dark:bg-slate-900 dark:text-white dark:hover:bg-black">
-              Coba Pro 14 hari
-            </Link>
+            <button onClick={handleProCheckout} disabled={upgrading} className="mt-6 inline-flex justify-center rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-slate-900 hover:bg-slate-50 disabled:opacity-50 dark:bg-slate-900 dark:text-white dark:hover:bg-black">
+              {upgrading ? 'Memproses...' : 'Coba Pro 14 hari'}
+            </button>
             <p className="mt-3 text-center text-xs text-slate-400 dark:text-slate-500">Tanpa kartu kredit • Downgrade kapan pun</p>
           </div>
 
