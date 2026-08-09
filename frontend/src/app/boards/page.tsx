@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState, useRef, useMemo } from 'react';
 import { Plus, Search, LayoutGrid, List, Clock3, ChevronRight } from 'lucide-react';
 import BoardCard from '../components/BoardCard';
+import WorkspaceSwitcher from '../components/WorkspaceSwitcher';
 import { useKanbanStore } from '../lib/store';
 import { SkeletonBoardList } from '../components/Skeletons';
 
@@ -12,10 +13,23 @@ export default function BoardsPage() {
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState('');
   const [view, setView] = useState<'grid' | 'list'>('grid');
+  const [hasWorkspace, setHasWorkspace] = useState<boolean | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchBoards();
+    // check workspaces for warning
+    import('../lib/api').then(({ apiFetch }) => {
+      apiFetch<{ workspaces: unknown[] }>('/api/workspaces')
+        .then((d) => setHasWorkspace(d.workspaces.length > 0))
+        .catch(() => setHasWorkspace(true));
+    });
+    const handler = (e: Event) => {
+      const id = (e as CustomEvent).detail as string;
+      fetchBoards(id);
+    };
+    window.addEventListener('workspace-changed', handler as EventListener);
+    return () => window.removeEventListener('workspace-changed', handler as EventListener);
   }, [fetchBoards]);
 
   useEffect(() => {
@@ -63,14 +77,30 @@ export default function BoardsPage() {
                 Semua papan kerja tim di satu tempat. Buat board baru, atur kolom, dan pantau progress real-time.
               </p>
             </div>
-            <button
-              onClick={() => setCreating(true)}
-              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white ring-1 ring-slate-900 transition hover:bg-black dark:bg-white dark:text-slate-900 dark:ring-white dark:hover:bg-slate-100"
-            >
-              <Plus className="h-4 w-4" strokeWidth={2} />
-              Buat board
-            </button>
+            <div className="flex items-center gap-3">
+              <div className="sm:hidden">
+                <WorkspaceSwitcher onChange={(id) => fetchBoards(id)} />
+              </div>
+              <button
+                onClick={() => setCreating(true)}
+                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white ring-1 ring-slate-900 transition hover:bg-black dark:bg-white dark:text-slate-900 dark:ring-white dark:hover:bg-slate-100"
+              >
+                <Plus className="h-4 w-4" strokeWidth={2} />
+                Buat board
+              </button>
+            </div>
           </div>
+          <div className="hidden sm:flex">
+            <WorkspaceSwitcher onChange={(id) => fetchBoards(id)} />
+          </div>
+
+          {hasWorkspace === false && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Belum ada workspace</p>
+              <p className="mt-1 text-sm leading-6 text-amber-700 dark:text-amber-400">Buat workspace dulu sebelum bikin board. Board tanpa workspace tidak akan muncul di daftar workspace.</p>
+              <p className="mt-2 text-xs text-amber-600 dark:text-amber-500">Tip: pilih “Buat workspace” di switcher di atas.</p>
+            </div>
+          )}
 
           {/* Toolbar */}
           <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">

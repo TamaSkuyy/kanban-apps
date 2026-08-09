@@ -25,6 +25,9 @@ export interface Board {
   user_id: string;
   title: string;
   theme_color: string | null;
+  workspace_id: string | null;
+  column_count: number;
+  task_count: number;
   created_at: string;
   updated_at: string;
   columns?: Column[];

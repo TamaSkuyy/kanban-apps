@@ -16,6 +16,7 @@ import {
 import {
   SortableContext,
   verticalListSortingStrategy,
+  horizontalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { toast } from 'sonner';
 import { useKanbanStore } from '../lib/store';
@@ -198,7 +199,7 @@ export default function KanbanBoard({
       onDragEnd={handleDragEnd}
     >
       <div className="relative">
-        <SortableContext items={columnIds} strategy={verticalListSortingStrategy}>
+        <SortableContext items={columnIds} strategy={horizontalListSortingStrategy}>
           <div className="flex gap-4 overflow-x-auto pb-4 -mx-1 px-1 snap-x snap-mandatory md:grid md:grid-cols-3 md:overflow-visible md:pb-0 md:snap-none">
           {currentBoard.columns.map((column) => {
             const tasks = column.tasks || [];

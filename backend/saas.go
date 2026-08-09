@@ -13,6 +13,18 @@ import (
 // ---- OTP helpers stored in DB ----
 
 func (s *server) createOTP(c *gin.Context, email, purpose string) (string, error) {
+	// Rate limit: max 5 OTP per 15m, cooldown 60s per email+purpose
+	var recentCount int
+	_ = s.db.QueryRow(c.Request.Context(), `SELECT count(*) FROM otps WHERE email=$1 AND purpose=$2 AND created_at > now() - interval '15 minutes'`, strings.ToLower(email), purpose).Scan(&recentCount)
+	if recentCount >= 5 {
+		return "", &rateLimitedError{msg: "too many OTP requests, try again later"}
+	}
+	var lastAt *time.Time
+	_ = s.db.QueryRow(c.Request.Context(), `SELECT created_at FROM otps WHERE email=$1 AND purpose=$2 ORDER BY created_at DESC LIMIT 1`, strings.ToLower(email), purpose).Scan(&lastAt)
+	if lastAt != nil && time.Since(*lastAt) < 60*time.Second {
+		return "", &rateLimitedError{msg: "please wait 60s before next OTP"}
+	}
+
 	code, err := GenerateOTP()
 	if err != nil {
 		return "", err
@@ -31,6 +43,10 @@ func (s *server) createOTP(c *gin.Context, email, purpose string) (string, error
 	_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO email_logs (to_email, subject, purpose) VALUES ($1,$2,$3)`, email, "OTP "+purpose, purpose)
 	return code, nil
 }
+
+type rateLimitedError struct{ msg string }
+
+func (e *rateLimitedError) Error() string { return e.msg }
 
 func (s *server) verifyOTP(c *gin.Context, email, code, purpose string) bool {
 	var hash string
@@ -91,10 +107,37 @@ func (s *server) requestOTP(c *gin.Context) {
 		return
 	}
 	if _, err := s.createOTP(c, req.Email, req.Purpose); err != nil {
+		if _, ok := err.(*rateLimitedError); ok {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create OTP"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"sent": true})
+}
+
+func (s *server) refreshToken(c *gin.Context) {
+	authHeader := c.GetHeader("Authorization")
+	token := ""
+	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+		token = authHeader[7:]
+	}
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing token"})
+		return
+	}
+	claims, err := ParseJWT(token)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+		return
+	}
+	newToken, err := GenerateJWT(claims.UserID, claims.Email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"token": newToken})
 }
 
 func (s *server) verifyOTPLogin(c *gin.Context) {
@@ -225,6 +268,161 @@ func (s *server) listWorkspaces(c *gin.Context) {
 		out = []gin.H{}
 	}
 	c.JSON(http.StatusOK, gin.H{"workspaces": out})
+}
+
+func (s *server) getWorkspace(c *gin.Context) {
+	wsID := c.Param("id")
+	userID := c.GetString("userID")
+	var id, slug, name, ownerID string
+	err := s.db.QueryRow(c.Request.Context(), `SELECT w.id, w.slug, w.name, w.owner_id FROM workspaces w JOIN workspace_members wm ON wm.workspace_id=w.id WHERE w.id=$1 AND wm.user_id=$2`, wsID, userID).Scan(&id, &slug, &name, &ownerID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "workspace not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"id": id, "slug": slug, "name": name, "owner_id": ownerID})
+}
+
+func (s *server) updateWorkspace(c *gin.Context) {
+	wsID := c.Param("id")
+	userID := c.GetString("userID")
+	// only owner/admin
+	var role string
+	_ = s.db.QueryRow(c.Request.Context(), `SELECT role FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, wsID, userID).Scan(&role)
+	if role != "owner" && role != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
+		return
+	}
+	var req struct {
+		Name string `json:"name" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	_, _ = s.db.Exec(c.Request.Context(), `UPDATE workspaces SET name=$1, updated_at=now() WHERE id=$2`, req.Name, wsID)
+	c.JSON(http.StatusOK, gin.H{"id": wsID, "name": req.Name})
+}
+
+func (s *server) deleteWorkspace(c *gin.Context) {
+	wsID := c.Param("id")
+	userID := c.GetString("userID")
+	var role string
+	_ = s.db.QueryRow(c.Request.Context(), `SELECT role FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, wsID, userID).Scan(&role)
+	if role != "owner" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only owner can delete"})
+		return
+	}
+	_, _ = s.db.Exec(c.Request.Context(), `DELETE FROM workspaces WHERE id=$1`, wsID)
+	c.JSON(http.StatusOK, gin.H{"deleted": true})
+}
+
+func (s *server) ensurePersonalWorkspace(c *gin.Context, userID string, email string) string {
+	slug := "personal-" + HashToken(userID)[:8]
+	var wsID string
+	// try find personal by slug
+	err := s.db.QueryRow(c.Request.Context(), `SELECT id FROM workspaces WHERE slug=$1`, slug).Scan(&wsID)
+	if err != nil {
+		name := "Personal"
+		if email != "" {
+			name = strings.Split(email, "@")[0] + "'s workspace"
+		}
+		err = s.db.QueryRow(c.Request.Context(), `INSERT INTO workspaces (slug, name, owner_id) VALUES ($1,$2,$3) ON CONFLICT (slug) DO UPDATE SET name=EXCLUDED.name RETURNING id`, slug, name, userID).Scan(&wsID)
+		if err != nil {
+			_ = s.db.QueryRow(c.Request.Context(), `SELECT id FROM workspaces WHERE slug=$1`, slug).Scan(&wsID)
+		}
+	}
+	if wsID != "" {
+		_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'owner') ON CONFLICT DO NOTHING`, wsID, userID)
+		_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO subscriptions (workspace_id) VALUES ($1) ON CONFLICT DO NOTHING`, wsID)
+		_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO entitlements (workspace_id) VALUES ($1) ON CONFLICT DO NOTHING`, wsID)
+		// backfill boards without workspace (migrate legacy)
+		_, _ = s.db.Exec(c.Request.Context(), `UPDATE boards SET workspace_id=$1 WHERE user_id=$2 AND workspace_id IS NULL`, wsID, userID)
+	}
+	return wsID
+}
+
+func (s *server) listWorkspaceMembers(c *gin.Context) {
+	wsID := c.Param("id")
+	userID := c.GetString("userID")
+	var ok bool
+	_ = s.db.QueryRow(c.Request.Context(), `SELECT true FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, wsID, userID).Scan(&ok)
+	if !ok {
+		c.JSON(http.StatusForbidden, gin.H{"error": "not a member"})
+		return
+	}
+	rows, _ := s.db.Query(c.Request.Context(), `SELECT wm.user_id, u.email, wm.role FROM workspace_members wm JOIN users u ON u.id=wm.user_id WHERE wm.workspace_id=$1 ORDER BY wm.created_at`, wsID)
+	defer func() { if rows != nil { rows.Close() } }()
+	var members []gin.H
+	if rows != nil {
+		for rows.Next() {
+			var uid, email, role string
+			_ = rows.Scan(&uid, &email, &role)
+			members = append(members, gin.H{"user_id": uid, "email": email, "role": role})
+		}
+	}
+	if members == nil {
+		members = []gin.H{}
+	}
+	c.JSON(http.StatusOK, gin.H{"members": members})
+}
+
+func (s *server) listBoardsByWorkspace(c *gin.Context) {
+	wsID := c.Param("id")
+	userID := c.GetString("userID")
+	// check membership
+	var exists bool
+	_ = s.db.QueryRow(c.Request.Context(), `SELECT true FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, wsID, userID).Scan(&exists)
+	if !exists {
+		c.JSON(http.StatusForbidden, gin.H{"error": "not a member"})
+		return
+	}
+	rows, err := s.db.Query(c.Request.Context(), `SELECT b.id, b.user_id, b.title, b.theme_color, b.workspace_id, b.created_at, b.updated_at FROM boards b WHERE b.workspace_id=$1 ORDER BY b.created_at DESC`, wsID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list boards"})
+		return
+	}
+	defer rows.Close()
+	boards := []Board{}
+	for rows.Next() {
+		var b Board
+		_ = rows.Scan(&b.ID, &b.UserID, &b.Title, &b.ThemeColor, &b.WorkspaceID, &b.CreatedAt, &b.UpdatedAt)
+		boards = append(boards, b)
+	}
+	c.JSON(http.StatusOK, gin.H{"boards": boards})
+}
+
+
+func (s *server) addWorkspaceMember(c *gin.Context) {
+    wsID := c.Param("id")
+    userID := c.GetString("userID")
+    var role string
+    _ = s.db.QueryRow(c.Request.Context(), `SELECT role FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, wsID, userID).Scan(&role)
+    if role != "owner" && role != "admin" {
+        c.JSON(403, gin.H{"error": "only owner/admin can invite"})
+        return
+    }
+    var req struct {
+        Email string `json:"email" binding:"required,email"`
+        Role  string `json:"role"`
+    }
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.JSON(400, gin.H{"error": "invalid request"})
+        return
+    }
+    if req.Role == "" {
+        req.Role = "member"
+    }
+    if req.Role != "member" && req.Role != "admin" && req.Role != "viewer" {
+        req.Role = "member"
+    }
+    var targetID string
+    err := s.db.QueryRow(c.Request.Context(), `SELECT id FROM users WHERE email=$1`, req.Email).Scan(&targetID)
+    if err != nil {
+        c.JSON(404, gin.H{"error": "user not found, must register first"})
+        return
+    }
+    _, _ = s.db.Exec(c.Request.Context(), `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,$3) ON CONFLICT (workspace_id, user_id) DO UPDATE SET role=EXCLUDED.role`, wsID, targetID, req.Role)
+    c.JSON(200, gin.H{"added": true})
 }
 
 // ---- Entitlements check ----

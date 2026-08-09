@@ -32,10 +32,10 @@ export default function BoardCard({
   const [confirming, setConfirming] = useState(false);
 
   const stats = useMemo(() => {
-    const colCount = board.columns?.length ?? 0;
-    const taskCount = board.columns?.reduce((s, c) => s + (c.tasks?.length ?? 0), 0) ?? 0;
+    const colCount = (board as any).column_count ?? board.columns?.length ?? 0;
+    const taskCount = (board as any).task_count ?? board.columns?.reduce((s, c) => s + (c.tasks?.length ?? 0), 0) ?? 0;
     return { colCount, taskCount };
-  }, [board.columns]);
+  }, [board]);
 
   async function handleDelete() {
     setConfirming(false);

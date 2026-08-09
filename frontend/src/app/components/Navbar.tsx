@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { Columns3, Sun, Moon, LogOut, ArrowRight } from 'lucide-react';
+import WorkspaceSwitcher from './WorkspaceSwitcher';
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -52,6 +53,9 @@ export default function Navbar() {
           <Link href="/boards" className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">
             Boards
           </Link>
+          <div className="hidden sm:block">
+            <WorkspaceSwitcher />
+          </div>
           <button
             className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
             onClick={logout}

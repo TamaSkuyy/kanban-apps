@@ -20,8 +20,8 @@ type KanbanState = {
   loading: boolean;
   error: string | null;
   myRole: string | null;
-  fetchBoards: () => Promise<void>;
-  createBoard: (title: string) => Promise<void>;
+  fetchBoards: (workspaceId?: string) => Promise<void>;
+  createBoard: (title: string, workspaceId?: string) => Promise<void>;
   updateBoard: (boardId: string, title: string, themeColor?: string | null) => Promise<void>;
   deleteBoard: (boardId: string) => Promise<void>;
   fetchBoard: (boardId: string) => Promise<void>;
@@ -45,22 +45,27 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
   error: null,
   myRole: null,
 
-  fetchBoards: async () => {
+  fetchBoards: async (workspaceId?: string) => {
     set({ loading: true, error: null });
     try {
-      const data = await apiFetch<{ boards: Board[] }>('/api/boards');
+      const ws = workspaceId ?? (typeof window !== 'undefined' ? localStorage.getItem('workspace_id') : null);
+      const path = ws ? `/api/boards?workspace_id=${encodeURIComponent(ws)}` : '/api/boards';
+      const data = await apiFetch<{ boards: Board[] }>(path);
       set({ boards: data.boards, loading: false });
     } catch (err) {
       set({ loading: false, error: err instanceof Error ? err.message : 'Failed to fetch boards' });
     }
   },
 
-  createBoard: async (title: string) => {
+  createBoard: async (title: string, workspaceId?: string) => {
     set({ error: null });
     try {
+      const ws = workspaceId ?? (typeof window !== 'undefined' ? localStorage.getItem('workspace_id') : null);
+      const body: Record<string, unknown> = { title };
+      if (ws) body.workspace_id = ws;
       const board = await apiFetch<Board>('/api/boards', {
         method: 'POST',
-        body: JSON.stringify({ title }),
+        body: JSON.stringify(body),
       });
       set((state) => ({ boards: [board, ...state.boards] }));
     } catch (err) {

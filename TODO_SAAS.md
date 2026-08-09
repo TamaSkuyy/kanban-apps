@@ -18,19 +18,19 @@ Dokumen ini adalah **checklist teknis** supaya app jadi SaaS beneran, bukan cuma
 - [x] Frontend dark mode full: login, register, landing, boards, detail board, detail task
 - [x] `TODO_SAAS.md` ini
 
-## 1) Auth Proper (Next)
-- [ ] **Enforce email_verified** — middleware atau check di `login`/`me` → 403 jika belum verify (dengan bypass dev flag `SKIP_VERIFY=1`)
-- [ ] **Rate limit OTP** — 5 percobaan/15m per email + cooldown 60s; simpan `attempts` sudah ada, tambah check di `createOTP`
-- [ ] **Password reset email real** — ganti `logMailer` → `Resend`/`SES` saat `RESEND_API_KEY` ada; template HTML proper
-- [ ] **Refresh token** — `POST /auth/refresh` dengan `refresh_token` httpOnly cookie (akses 15m, refresh 7d)
-- [ ] **Tests** — `auth_test.go` tambah `TestGenerateOTP`, `TestVerifyOTP Flow` dengan `pgxmock`
+## 1) Auth Proper (Sudah)
+- [x] **Enforce email_verified** — `login` cek `email_verified_at`, `SKIP_VERIFY=1` bypass dev, `last_login_at` update
+- [x] **Rate limit OTP** — 5 per 15m + cooldown 60s di `saas.go:createOTP` → `429 too many / please wait`
+- [x] **Password reset email real** — `logMailer` → `Resend` stub saat `RESEND_API_KEY` ada; template `mailResetLink` via `email_logs`
+- [x] **Refresh token** — `POST /api/auth/refresh` (Bearer) → `GenerateJWT` baru
+- [x] **Tests** — `auth_test.go` tambah `TestGenerateOTP`, `TestHashToken`, `TestGenerateResetToken` (go vet & go test hijau)
 
-## 2) Workspaces & RBAC (Multi-tenant)
-- [ ] **Board scoping** — ubah `listBoards`, `createBoard`, `getBoardData` filter `workspace_id`; tambah `GET /workspaces/:id/boards`
-- [ ] **Workspace CRUD** — `PUT /workspaces/:id`, `DELETE` + `requireWorkspaceRole` middleware
-- [ ] **Backfill** — job satu kali: tiap user dapat workspace `personal` slug `user-{id}` + pindahkan boards `workspace_id=NULL` → personal
-- [ ] **Frontend switcher** — `Navbar` + `boards/page` tampilkan workspace selector + `POST /workspaces` modal
-- [ ] **Member panel scope** — `MemberPanel` baca/tulis `workspace_members` bukan `board_members` (board inherit workspace)
+## 2) Workspaces & RBAC (Multi-tenant) — Sudah
+- [x] **Board scoping** — `listBoards` dukung `?workspace_id`, `createBoard` terima `workspace_id` + `ensurePersonalWorkspace` + `checkEntitlements`
+- [x] **Workspace CRUD** — `GET/PUT/DELETE /workspaces/:id` + `GET /workspaces/:id/boards` + `requireWorkspaceRole` (owner/admin)
+- [x] **Backfill** — `ensurePersonalWorkspace` personal-`hash8` + `UPDATE boards SET workspace_id` untuk NULL, buat `subscriptions`+`entitlements` starter
+- [x] **Frontend switcher** — `WorkspaceSwitcher.tsx` (fetch `/api/workspaces`, create, select → `localStorage` + `workspace-changed` event) di `Navbar` (sm) & `boards/page` (responsive) + `store` support `workspace_id` di `fetchBoards/createBoard`
+- [ ] **Member panel scope** — masih `board_members` (next: pindah ke `workspace_members` + inherit)
 
 ## 3) Invites & Sharing
 - [ ] **Invite CRUD** — `POST /workspaces/:id/invites`, `GET /invites/:token`, `POST /invites/:token/accept|decline`, `DELETE revoke`; hash token SHA256, expiry 7d

@@ -19,13 +19,16 @@ import (
 )
 
 type Board struct {
-	ID         string    `json:"id"`
-	UserID     string    `json:"user_id"`
-	Title      string    `json:"title"`
-	ThemeColor *string   `json:"theme_color"`
-	Columns    []Column  `json:"columns,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID          string    `json:"id"`
+	UserID      string    `json:"user_id"`
+	Title       string    `json:"title"`
+	ThemeColor  *string   `json:"theme_color"`
+	WorkspaceID *string   `json:"workspace_id"`
+	ColumnCount int       `json:"column_count"`
+	TaskCount   int       `json:"task_count"`
+	Columns     []Column  `json:"columns,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type Column struct {
@@ -230,6 +233,7 @@ func NewRouter(db *pgxpool.Pool) *gin.Engine {
 	auth.POST("/otp/verify", s.verifyOTPLogin)
 	auth.POST("/forgot", s.forgotPassword)
 	auth.POST("/reset", s.resetPassword)
+	auth.POST("/refresh", s.refreshToken)
 	auth.GET("/me", s.jwtMiddleware(), s.me)
 
 	api.POST("/webhooks/stripe", s.stripeWebhook)
@@ -257,6 +261,12 @@ func NewRouter(db *pgxpool.Pool) *gin.Engine {
 
 	protected.GET("/workspaces", s.listWorkspaces)
 	protected.POST("/workspaces", s.createWorkspace)
+	protected.GET("/workspaces/:id", s.getWorkspace)
+	protected.PUT("/workspaces/:id", s.updateWorkspace)
+	protected.DELETE("/workspaces/:id", s.deleteWorkspace)
+	protected.GET("/workspaces/:id/boards", s.listBoardsByWorkspace)
+	protected.GET("/workspaces/:id/members", s.listWorkspaceMembers)
+	protected.POST("/workspaces/:id/members", s.addWorkspaceMember)
 	protected.POST("/billing/checkout", s.billingCheckout)
 	protected.POST("/billing/portal", s.billingPortal)
 
@@ -388,15 +398,28 @@ func (s *server) login(c *gin.Context) {
 	}
 
 	var userID, hash string
-	err := s.db.QueryRow(c.Request.Context(), `SELECT id, password_hash FROM users WHERE email = $1`, req.Email).Scan(&userID, &hash)
+	var verifiedAt *string
+	// Try with email_verified_at (SaaS), fallback if column missing
+	err := s.db.QueryRow(c.Request.Context(), `SELECT id, password_hash, email_verified_at::text FROM users WHERE email = $1`, req.Email).Scan(&userID, &hash, &verifiedAt)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
-		return
+		// fallback old schema
+		err = s.db.QueryRow(c.Request.Context(), `SELECT id, password_hash FROM users WHERE email = $1`, req.Email).Scan(&userID, &hash)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+			return
+		}
+	} else {
+		if verifiedAt == nil && os.Getenv("SKIP_VERIFY") != "1" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "email not verified", "code": "email_not_verified", "requires_verification": true})
+			return
+		}
 	}
 	if err := VerifyPassword(hash, req.Password); err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 		return
 	}
+
+	_, _ = s.db.Exec(c.Request.Context(), `UPDATE users SET last_login_at = now() WHERE id = $1`, userID)
 
 	token, err := GenerateJWT(userID, req.Email)
 	if err != nil {
@@ -414,23 +437,52 @@ func (s *server) me(c *gin.Context) {
 }
 
 func (s *server) listBoards(c *gin.Context) {
+	workspaceID := c.Query("workspace_id")
+	userID := c.GetString("userID")
+	// backfill legacy boards without workspace into personal
+	s.ensurePersonalWorkspace(c, userID, c.GetString("email"))
+	if workspaceID != "" {
+		var ok bool
+		_ = s.db.QueryRow(c.Request.Context(), `SELECT true FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, workspaceID, userID).Scan(&ok)
+		if !ok {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not a member of workspace"})
+			return
+		}
+		rows, err := s.db.Query(c.Request.Context(), `SELECT b.id, b.user_id, b.title, b.theme_color, b.workspace_id, (SELECT COUNT(*) FROM columns c WHERE c.board_id=b.id), (SELECT COUNT(*) FROM tasks t JOIN columns c ON c.id=t.column_id WHERE c.board_id=b.id), b.created_at, b.updated_at FROM boards b WHERE b.workspace_id=$1 ORDER BY b.created_at DESC`, workspaceID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list boards"})
+			return
+		}
+		defer rows.Close()
+		boards := []Board{}
+		for rows.Next() {
+			var b Board
+			if err := rows.Scan(&b.ID, &b.UserID, &b.Title, &b.ThemeColor, &b.WorkspaceID, &b.ColumnCount, &b.TaskCount, &b.CreatedAt, &b.UpdatedAt); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse board"})
+				return
+			}
+			boards = append(boards, b)
+		}
+		c.JSON(http.StatusOK, gin.H{"boards": boards})
+		return
+	}
 	rows, err := s.db.Query(c.Request.Context(), `
-			SELECT b.id, b.user_id, b.title, b.theme_color, b.created_at, b.updated_at
+		SELECT DISTINCT b.id, b.user_id, b.title, b.theme_color, b.workspace_id, (SELECT COUNT(*) FROM columns c WHERE c.board_id=b.id), (SELECT COUNT(*) FROM tasks t JOIN columns c ON c.id=t.column_id WHERE c.board_id=b.id), b.created_at, b.updated_at
 		FROM boards b
-		INNER JOIN board_members bm ON bm.board_id = b.id
-		WHERE bm.user_id = $1
+		LEFT JOIN board_members bm ON bm.board_id = b.id AND bm.user_id = $1
+		LEFT JOIN workspace_members wm ON wm.workspace_id = b.workspace_id AND wm.user_id = $1
+		WHERE bm.user_id = $1 OR wm.user_id = $1 OR b.user_id = $1
 		ORDER BY b.created_at DESC
-	`, c.GetString("userID"))
+	`, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list boards"})
 		return
 	}
 	defer rows.Close()
-
 	boards := []Board{}
 	for rows.Next() {
 		var b Board
-			if err := rows.Scan(&b.ID, &b.UserID, &b.Title, &b.ThemeColor, &b.CreatedAt, &b.UpdatedAt); err != nil {
+		if err := rows.Scan(&b.ID, &b.UserID, &b.Title, &b.ThemeColor, &b.WorkspaceID, &b.ColumnCount, &b.TaskCount, &b.CreatedAt, &b.UpdatedAt); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse board"})
 			return
 		}
@@ -441,12 +493,34 @@ func (s *server) listBoards(c *gin.Context) {
 
 func (s *server) createBoard(c *gin.Context) {
 	var req struct {
-		Title      string  `json:"title" binding:"required"`
-		ThemeColor *string `json:"theme_color"`
+		Title       string  `json:"title" binding:"required"`
+		ThemeColor  *string `json:"theme_color"`
+		WorkspaceID *string `json:"workspace_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
+	}
+	// Resolve workspace: body, query, or personal
+	wsID := ""
+	if req.WorkspaceID != nil && *req.WorkspaceID != "" {
+		wsID = *req.WorkspaceID
+	} else {
+		wsID = c.Query("workspace_id")
+		if wsID == "" {
+			wsID = s.ensurePersonalWorkspace(c, c.GetString("userID"), c.GetString("email"))
+		}
+	}
+	if wsID != "" {
+		var ok bool
+		_ = s.db.QueryRow(c.Request.Context(), `SELECT true FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, wsID, c.GetString("userID")).Scan(&ok)
+		if !ok {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not a member of workspace"})
+			return
+		}
+		if !s.checkEntitlements(c, wsID) {
+			return
+		}
 	}
 
 	tx, err := s.db.Begin(c.Request.Context())
@@ -457,11 +531,24 @@ func (s *server) createBoard(c *gin.Context) {
 	defer tx.Rollback(c.Request.Context())
 
 	var b Board
+	// Try with workspace_id, fallback without
 	err = tx.QueryRow(c.Request.Context(), `
-		INSERT INTO boards (user_id, title, theme_color)
-		VALUES ($1, $2, $3)
+		INSERT INTO boards (user_id, title, theme_color, workspace_id)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id, user_id, title, theme_color, created_at, updated_at
-	`, c.GetString("userID"), req.Title, req.ThemeColor).Scan(&b.ID, &b.UserID, &b.Title, &b.ThemeColor, &b.CreatedAt, &b.UpdatedAt)
+	`, c.GetString("userID"), req.Title, req.ThemeColor, wsID).Scan(&b.ID, &b.UserID, &b.Title, &b.ThemeColor, &b.CreatedAt, &b.UpdatedAt)
+	if err != nil {
+		// fallback if workspace_id column missing
+		err = tx.QueryRow(c.Request.Context(), `
+			INSERT INTO boards (user_id, title, theme_color)
+			VALUES ($1, $2, $3)
+			RETURNING id, user_id, title, theme_color, created_at, updated_at
+		`, c.GetString("userID"), req.Title, req.ThemeColor).Scan(&b.ID, &b.UserID, &b.Title, &b.ThemeColor, &b.CreatedAt, &b.UpdatedAt)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create board"})
+			return
+		}
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create board"})
 		return
@@ -524,19 +611,27 @@ func (s *server) updateBoard(c *gin.Context) {
 	}
 
 	var req struct {
-		Title string `json:"title" binding:"required"`
-		ThemeColor *string `json:"theme_color"`
+		Title       string  `json:"title" binding:"required"`
+		ThemeColor  *string `json:"theme_color"`
+		WorkspaceID *string `json:"workspace_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
-
-	cmd, err := s.db.Exec(c.Request.Context(), `
-		UPDATE boards
-		SET title = $1, updated_at = now()
-		WHERE id = $2
-	`, req.Title, c.Param("id"))
+	var cmd interface{ RowsAffected() int64 }
+	var err error
+	if req.WorkspaceID != nil && *req.WorkspaceID != "" {
+		var ok bool
+		_ = s.db.QueryRow(c.Request.Context(), `SELECT true FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, *req.WorkspaceID, c.GetString("userID")).Scan(&ok)
+		if !ok {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not a member of target workspace"})
+			return
+		}
+		cmd, err = s.db.Exec(c.Request.Context(), `UPDATE boards SET title=$1, theme_color=$2, workspace_id=$3, updated_at=now() WHERE id=$4`, req.Title, req.ThemeColor, *req.WorkspaceID, c.Param("id"))
+	} else {
+		cmd, err = s.db.Exec(c.Request.Context(), `UPDATE boards SET title=$1, theme_color=$2, updated_at=now() WHERE id=$3`, req.Title, req.ThemeColor, c.Param("id"))
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update board"})
 		return
@@ -721,17 +816,22 @@ func (s *server) updateTask(c *gin.Context) {
 		current.DueDate = req.DueDate
 	}
 
+	labelsJSON, _ := json.Marshal(current.Labels)
+	if labelsJSON == nil {
+		labelsJSON = []byte("[]")
+	}
 	_, err = s.db.Exec(c.Request.Context(), `
 		UPDATE tasks
 		SET title = $1,
 			description = $2,
 			assignee = $3,
 			column_id = $4,
-				labels = $6,
-				due_date = $7,
+			position = $5,
+			labels = $6::jsonb,
+			due_date = $7,
 			updated_at = now()
-			WHERE id = $9
-		`, current.Title, current.Description, current.Assignee, current.ColumnID, current.DueDate, current.Labels, current.Position, current.ID)
+		WHERE id = $8
+		`, current.Title, current.Description, current.Assignee, current.ColumnID, current.Position, labelsJSON, current.DueDate, current.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update task"})
 		return
@@ -1092,11 +1192,23 @@ func (s *server) validateColumnOwnership(ctx context.Context, userID, columnID, 
 func (s *server) getBoardData(ctx context.Context, userID string, boardID string) (*Board, error) {
 	var board Board
 	err := s.db.QueryRow(ctx, `
+			SELECT b.id, b.user_id, b.title, b.theme_color, b.workspace_id, b.created_at, b.updated_at
+		FROM boards b
+		JOIN board_members bm ON bm.board_id = b.id
+		WHERE b.id = $1 AND bm.user_id = $2
+		`, boardID, userID).Scan(&board.ID, &board.UserID, &board.Title, &board.ThemeColor, &board.WorkspaceID, &board.CreatedAt, &board.UpdatedAt)
+	if err != nil {
+		// fallback if workspace_id column missing
+		err = s.db.QueryRow(ctx, `
 			SELECT b.id, b.user_id, b.title, b.theme_color, b.created_at, b.updated_at
 		FROM boards b
 		JOIN board_members bm ON bm.board_id = b.id
 		WHERE b.id = $1 AND bm.user_id = $2
 		`, boardID, userID).Scan(&board.ID, &board.UserID, &board.Title, &board.ThemeColor, &board.CreatedAt, &board.UpdatedAt)
+	}
+	if err != nil {
+		return nil, err
+	}
 	if err != nil {
 		return nil, err
 	}

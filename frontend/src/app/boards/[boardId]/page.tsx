@@ -3,7 +3,7 @@
 import { KeyboardEvent, useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Search, Palette, ArrowLeft, ChevronRight, Layers, CheckCircle2, Shield } from 'lucide-react';
+import { Search, Palette, ArrowLeft, ChevronRight, Layers, CheckCircle2, Shield, Building2 } from 'lucide-react';
 import KanbanBoard from '../../components/KanbanBoard';
 import { useKanbanStore } from '../../lib/store';
 import { useBoardEvents } from '../../lib/useBoardEvents';
@@ -12,6 +12,7 @@ import { SkeletonBoardDetail } from '../../components/Skeletons';
 import ActivityLog from '../../components/ActivityLog';
 import OnlineAvatars from '../../components/OnlineAvatars';
 import MemberPanel from '../../components/MemberPanel';
+import { apiFetch } from '../../lib/api';
 import type { OnlineUser } from '../../../types';
 
 const THEME_COLORS = [
@@ -38,11 +39,18 @@ export default function BoardDetailPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearch = useDebounce(searchQuery, 300);
   const [presenceEvent, setPresenceEvent] = useState<{ data: OnlineUser[] } | null>(null);
+  const [workspaces, setWorkspaces] = useState<{ id: string; name: string; slug: string }[]>([]);
   const userRole = myRole;
 
   useEffect(() => {
     fetchBoard(boardId);
   }, [fetchBoard, boardId]);
+
+  useEffect(() => {
+    apiFetch<{ workspaces: { id: string; name: string; slug: string }[] }>('/api/workspaces')
+      .then((d) => setWorkspaces(d.workspaces))
+      .catch(() => {});
+  }, []);
 
   const handlePresence = useCallback((users: OnlineUser[]) => {
     setPresenceEvent({ data: users });
@@ -111,7 +119,7 @@ export default function BoardDetailPage() {
         </div>
 
         {/* Board header card */}
-        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900" style={currentBoard.theme_color ? { borderTopColor: currentBoard.theme_color, borderTopWidth: "3px" } as React.CSSProperties : undefined}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-3">
@@ -185,6 +193,37 @@ export default function BoardDetailPage() {
                 <span>Diperbarui {new Date(currentBoard.updated_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })}</span>
                 <span className="hidden h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600 md:inline" />
                 <span className="hidden text-slate-400 dark:text-slate-500 md:inline">Klik judul untuk edit • SSE live</span>
+              </div>
+              {/* Workspace sync */}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-400">
+                  <Building2 className="h-3.5 w-3.5" />
+                  Workspace:
+                </span>
+                <select
+                  value={currentBoard.workspace_id ?? ''}
+                  onChange={async (e) => {
+                    const newWs = e.target.value;
+                    if (!newWs || newWs === currentBoard.workspace_id) return;
+                    try {
+                      await apiFetch(`/api/boards/${boardId}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({ title: currentBoard.title, workspace_id: newWs }),
+                      });
+                      localStorage.setItem('workspace_id', newWs);
+                      fetchBoard(boardId);
+                      // refresh workspaces for navbar
+                      window.dispatchEvent(new CustomEvent('workspace-changed', { detail: newWs }));
+                    } catch {}
+                  }}
+                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                >
+                  <option value="">Tanpa workspace</option>
+                  {workspaces.map((w) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+                <span className="text-xs text-slate-400 dark:text-slate-500">sinkron dengan switcher di Boards</span>
               </div>
             </div>
             <div className="flex items-center gap-2">
