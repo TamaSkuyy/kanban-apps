@@ -31,13 +31,13 @@ function timeAgo(dateStr: string): string {
 function actionLabel(action: string): { icon: string; text: string } {
   switch (action) {
     case 'task.created':
-      return { icon: '➕', text: 'created' };
+      return { icon: '•', text: 'dibuat' };
     case 'task.updated':
-      return { icon: '✏️', text: 'updated' };
+      return { icon: '•', text: 'diperbarui' };
     case 'task.moved':
-      return { icon: '↗️', text: 'moved' };
+      return { icon: '•', text: 'dipindahkan' };
     case 'task.deleted':
-      return { icon: '🗑️', text: 'deleted' };
+      return { icon: '•', text: 'dihapus' };
     default:
       return { icon: '•', text: action };
   }
@@ -64,10 +64,10 @@ export default function ActivityLog({ boardId }: { boardId: string }) {
   return (
     <>
       <button
-        className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium shadow-sm transition-all duration-200 ${
+        className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition ${
           open
-            ? 'bg-emerald-500 text-white shadow-emerald-200 dark:shadow-none'
-            : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-700'
+            ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+            : 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-700'
         }`}
         onClick={() => setOpen(!open)}
       >
@@ -76,9 +76,9 @@ export default function ActivityLog({ boardId }: { boardId: string }) {
       </button>
 
       {open && (
-        <div className="w-full rounded-2xl border bg-white p-4 shadow-sm dark:bg-slate-800 dark:border-slate-700">
+        <div className="mt-3 w-full rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
           {activities.length === 0 && (
-            <p className="py-4 text-center text-xs text-slate-400">No activity yet — start moving tasks! 🚀</p>
+            <p className="py-4 text-center text-xs text-slate-500 dark:text-slate-400">Belum ada aktivitas — mulai pindahkan task.</p>
           )}
           <ul className="max-h-64 space-y-1 overflow-y-auto">
             {activities.map((a) => {

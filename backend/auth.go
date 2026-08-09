@@ -1,7 +1,11 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"time"
 
@@ -65,4 +69,35 @@ func ParseJWT(tokenString string) (*AuthClaims, error) {
 		return nil, errors.New("invalid token")
 	}
 	return claims, nil
+}
+
+func GenerateResetToken(userID string, email string) (string, error) {
+	claims := AuthClaims{
+		UserID: userID,
+		Email:  email,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(jwtSecret())
+}
+
+func GenerateOTP() (string, error) {
+	n := make([]byte, 4)
+	if _, err := rand.Read(n); err != nil {
+		return "", err
+	}
+	num := int(n[0])<<24 | int(n[1])<<16 | int(n[2])<<8 | int(n[3])
+	if num < 0 {
+		num = -num
+	}
+	code := fmt.Sprintf("%06d", num%1000000)
+	return code, nil
+}
+
+func HashToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
 }

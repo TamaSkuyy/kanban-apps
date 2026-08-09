@@ -5,7 +5,7 @@ import Navbar from './Navbar';
 import SkipToContent from './SkipToContent';
 import ScreenReaderAnnouncer from './ScreenReaderAnnouncer';
 
-const AUTH_PATHS = ['/login', '/register'];
+const AUTH_PATHS = ['/login', '/register', '/'];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

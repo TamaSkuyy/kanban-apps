@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
-import { Columns3, Sun, Moon, LogOut } from 'lucide-react';
+import { Columns3, Sun, Moon, LogOut, ArrowRight } from 'lucide-react';
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -30,62 +30,79 @@ export default function Navbar() {
     <>
       {!tokenExists && pathname !== '/login' && (
         <Link href="/login" className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white" onClick={() => setMenuOpen(false)}>
-          Login
+          Masuk
         </Link>
       )}
       {!tokenExists && pathname !== '/register' && (
         <Link href="/register" className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white" onClick={() => setMenuOpen(false)}>
-          Register
+          Daftar
+        </Link>
+      )}
+      {!tokenExists && pathname !== '/login' && pathname !== '/register' && (
+        <Link
+          href="/register"
+          className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-4 py-1.5 text-sm font-medium text-white ring-1 ring-slate-900 hover:bg-black dark:bg-white dark:text-slate-900 dark:ring-white"
+          onClick={() => setMenuOpen(false)}
+        >
+          Mulai gratis <ArrowRight className="h-3.5 w-3.5" />
         </Link>
       )}
       {tokenExists && (
-        <button
-          className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium text-red-500 transition hover:bg-red-50 dark:hover:bg-red-950"
-          onClick={logout}
-        >
-          <LogOut className="h-4 w-4" />
-          Logout
-        </button>
+        <>
+          <Link href="/boards" className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">
+            Boards
+          </Link>
+          <button
+            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            onClick={logout}
+          >
+            <LogOut className="h-4 w-4" />
+            Keluar
+          </button>
+        </>
       )}
     </>
   );
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200/60 bg-white/80 backdrop-blur-md dark:border-slate-700/60 dark:bg-slate-900/80">
-      <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-3">
-        {/* Left: Logo + brand */}
-        <Link href="/boards" className="flex items-center gap-2 transition-opacity hover:opacity-80">
-          <Columns3 className="h-6 w-6 text-emerald-500" strokeWidth={2.2} />
-          <span className="text-lg font-bold tracking-tight text-slate-800 dark:text-white">
-            Kanban
+    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80">
+      <div className="mx-auto flex h-[56px] max-w-[1280px] items-center justify-between px-5 lg:px-8">
+        <Link href={tokenExists ? '/boards' : '/'} className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 dark:bg-white">
+            <Columns3 className="h-[18px] w-[18px] text-white dark:text-slate-900" strokeWidth={2.2} />
+          </span>
+          <span className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-white">Kanban</span>
+          <span className="hidden rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium tracking-wide text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 sm:inline-flex">
+            WORKSPACE
           </span>
         </Link>
 
-        {/* Desktop nav */}
-        <nav className="hidden items-center gap-3 sm:flex">
+        <nav className="hidden items-center gap-5 sm:flex">
+          {mounted && navLinks}
           {mounted && (
-            <>
-              {navLinks}
-              <button
-                className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                title="Toggle theme"
-                suppressHydrationWarning
-              >
-                {theme === 'dark' ? (
-                  <Sun className="h-4 w-4" />
-                ) : (
-                  <Moon className="h-4 w-4" />
-                )}
-              </button>
-            </>
+            <button
+              className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              title="Ganti tema"
+              suppressHydrationWarning
+            >
+              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
           )}
         </nav>
 
-        {/* Mobile hamburger */}
-        <div className="sm:hidden">
+        <div className="flex items-center gap-2 sm:hidden">
+          {mounted && (
+            <button
+              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400"
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              aria-label="Toggle theme"
+            >
+              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
+          )}
           <button
-            className="rounded p-1 text-slate-600"
+            className="rounded p-1 text-slate-600 dark:text-slate-300"
             onClick={() => setMenuOpen(!menuOpen)}
             aria-label="Toggle menu"
           >
@@ -100,9 +117,8 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Mobile dropdown */}
       {menuOpen && mounted && (
-        <div className="border-t bg-white px-4 py-3 sm:hidden dark:bg-slate-900 dark:border-slate-700">
+        <div className="border-t border-slate-200 bg-white px-5 py-3 sm:hidden dark:border-slate-700 dark:bg-slate-900">
           <nav className="flex flex-col gap-3">{navLinks}</nav>
         </div>
       )}

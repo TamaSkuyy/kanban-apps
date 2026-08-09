@@ -20,33 +20,33 @@ function getDueDateInfo(dueDate: string | null): { label: string; color: string 
   const diffDays = Math.ceil((dueDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
   if (diffDays < 0) {
-    return { label: 'Overdue', color: 'bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400' };
+    return { label: 'Terlambat', color: 'bg-red-50 text-red-700 ring-red-200 dark:bg-red-950 dark:text-red-300 dark:ring-red-800' };
   }
   if (diffDays <= 7) {
     return {
-      label: dueDay.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      color: 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400',
+      label: dueDay.toLocaleDateString('id-ID', { month: 'short', day: 'numeric' }),
+      color: 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:ring-amber-800',
     };
   }
   return {
-    label: dueDay.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+    label: dueDay.toLocaleDateString('id-ID', { month: 'short', day: 'numeric' }),
+    color: 'bg-slate-50 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700',
   };
 }
 
-/* ── Label colors ─────────────────────────────────────────────── */
+/* ── Label colors — muted SaaS ─────────────────────────────────────── */
 const LABEL_COLORS: Record<string, string> = {
   bug: '#ef4444',
-  feature: '#22c55e',
+  feature: '#16a34a',
   urgent: '#f97316',
-  design: '#a855f7',
-  improvement: '#3b82f6',
+  design: '#9333ea',
+  improvement: '#2563eb',
   docs: '#64748b',
 };
 
 const AVATAR_COLORS = [
-  'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-pink-500',
-  'bg-indigo-500', 'bg-teal-500', 'bg-orange-500', 'bg-cyan-500',
+  'bg-slate-700', 'bg-slate-600', 'bg-zinc-600', 'bg-stone-600',
+  'bg-neutral-600', 'bg-slate-500', 'bg-zinc-500', 'bg-stone-500',
 ];
 
 function avatarColor(name: string): string {
@@ -62,19 +62,13 @@ function highlightText(text: string, query: string): React.ReactNode {
   const parts = text.split(regex);
   return parts.map((part, i) =>
     regex.test(part) ? (
-      <mark key={i} className="rounded-sm bg-yellow-200 px-0.5 text-inherit dark:bg-yellow-800 dark:text-yellow-100">
+      <mark key={i} className="rounded bg-yellow-100 px-0.5 text-inherit dark:bg-yellow-900 dark:text-yellow-100">
         {part}
       </mark>
     ) : (
       part
     )
   );
-}
-
-/* ── Card accent color from labels ────────────────────────────── */
-function cardAccent(labels: string[]): string | undefined {
-  const firstLabel = labels.find((l) => l in LABEL_COLORS);
-  return firstLabel ? LABEL_COLORS[firstLabel] : undefined;
 }
 
 /* ── Main component ───────────────────────────────────────────── */
@@ -105,7 +99,6 @@ export default function TaskCard({
   const [hover, setHover] = useState(false);
   const [mounted, setMounted] = useState(false);
   const dueInfo = useMemo(() => (mounted ? getDueDateInfo(task.due_date) : null), [mounted, task.due_date]);
-  const accent = cardAccent(task.labels || []);
 
   useEffect(() => {
     setMounted(true);
@@ -137,25 +130,17 @@ export default function TaskCard({
 
   return (
     <div
-      className={`group relative overflow-hidden rounded-xl bg-white p-3 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md dark:bg-slate-700 dark:text-slate-100 ${
-        isSelected ? 'ring-2 ring-emerald-400' : ''
+      className={`group relative rounded-lg border bg-white p-3 shadow-sm transition hover:border-slate-300 hover:shadow-sm dark:border-slate-700 dark:bg-slate-800 ${
+        isSelected ? 'ring-2 ring-slate-900 dark:ring-white' : 'ring-0'
       } ${isSearching && !matchesSearch ? 'opacity-30' : ''}`}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      {/* Colored left accent bar */}
-      {accent && (
-        <div
-          className="absolute left-0 top-0 h-full w-1"
-          style={{ backgroundColor: accent }}
-        />
-      )}
-
       {/* Hover action buttons */}
-      <div className="absolute right-1 top-1 flex gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+      <div className="absolute right-1 top-1 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
         {onEdit && (
           <button
-            className="rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-slate-600 dark:hover:text-slate-200"
+            className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200"
             onClick={onEdit}
             title="Edit task"
           >
@@ -164,9 +149,9 @@ export default function TaskCard({
         )}
         {onDelete && (
           <button
-            className="rounded-lg p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950 dark:hover:text-red-400"
+            className="rounded-md p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950 dark:hover:text-red-400"
             onClick={onDelete}
-            title="Delete task"
+            title="Hapus task"
           >
             <Trash2 className="h-3 w-3" />
           </button>
@@ -174,11 +159,11 @@ export default function TaskCard({
       </div>
 
       {/* Title */}
-      <div className={accent ? 'pl-2' : ''}>
+      <div className="pr-8">
         {editing ? (
           <input
             autoFocus
-            className="w-full rounded-lg border bg-white px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-emerald-400 dark:bg-slate-600 dark:border-slate-500"
+            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-900/10 dark:border-slate-600 dark:bg-slate-700 dark:text-white dark:focus:border-slate-500"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onBlur={() => void save()}
@@ -186,7 +171,8 @@ export default function TaskCard({
           />
         ) : (
           <button
-            className="w-full pr-10 text-left text-sm font-medium text-slate-700 dark:text-slate-200"
+            className="w-full text-left text-[13px] font-medium leading-5 text-slate-900 dark:text-slate-100"
+            onClick={() => { if (!readOnly) setEditing(true); }}
             onDoubleClick={() => { if (!readOnly) setEditing(true); }}
           >
             {isSearching ? highlightText(task.title, searchQuery!) : task.title}
@@ -195,7 +181,7 @@ export default function TaskCard({
 
         {/* Description preview */}
         {descPreview && (
-          <p className="mt-1 text-xs leading-relaxed text-gray-400 line-clamp-2 dark:text-gray-500">
+          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
             {descPreview}
           </p>
         )}
@@ -203,26 +189,30 @@ export default function TaskCard({
         {/* Labels */}
         {(task.labels || []).length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
-            {(task.labels || []).map((label) => (
-              <span
-                key={label}
-                className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                style={{
-                  backgroundColor: (LABEL_COLORS as Record<string, string>)[label] + '20' || '#e2e8f0',
-                  color: (LABEL_COLORS as Record<string, string>)[label] || '#64748b',
-                }}
-              >
-                {label}
-              </span>
-            ))}
+            {(task.labels || []).map((label) => {
+              const col = LABEL_COLORS[label] || '#64748b';
+              return (
+                <span
+                  key={label}
+                  className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                  style={{
+                    backgroundColor: col + '14',
+                    borderColor: col + '30',
+                    color: col,
+                  }}
+                >
+                  {label}
+                </span>
+              );
+            })}
           </div>
         )}
 
         {/* Footer: date + assignee */}
-        <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="mt-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
             {dueInfo && (
-              <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${dueInfo.color}`}>
+              <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${dueInfo.color}`}>
                 {dueInfo.label}
               </span>
             )}
@@ -230,7 +220,7 @@ export default function TaskCard({
           <div className="flex items-center gap-1.5">
             {task.assignee ? (
               <span
-                className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold text-white ${avatarColor(task.assignee)}`}
+                className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-medium text-white ${avatarColor(task.assignee)}`}
                 title={task.assignee}
               >
                 {task.assignee.charAt(0).toUpperCase()}
@@ -238,7 +228,7 @@ export default function TaskCard({
             ) : (
               <Link
                 href={`/boards/${boardId}/tasks/${task.id}`}
-                className="text-[11px] font-medium text-emerald-600 transition hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+                className="text-xs font-medium text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-900 hover:decoration-slate-900 dark:text-slate-400 dark:decoration-slate-600 dark:hover:text-white"
               >
                 Detail
               </Link>

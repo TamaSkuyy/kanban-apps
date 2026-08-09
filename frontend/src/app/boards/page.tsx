@@ -1,7 +1,7 @@
 'use client';
 
-import { FormEvent, useEffect, useState, useRef } from 'react';
-import { Plus } from 'lucide-react';
+import { FormEvent, useEffect, useState, useRef, useMemo } from 'react';
+import { Plus, Search, LayoutGrid, List, Clock3, ChevronRight } from 'lucide-react';
 import BoardCard from '../components/BoardCard';
 import { useKanbanStore } from '../lib/store';
 import { SkeletonBoardList } from '../components/Skeletons';
@@ -10,6 +10,8 @@ export default function BoardsPage() {
   const { boards, loading, error, fetchBoards, createBoard } = useKanbanStore();
   const [title, setTitle] = useState('');
   const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState('');
+  const [view, setView] = useState<'grid' | 'list'>('grid');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -17,10 +19,14 @@ export default function BoardsPage() {
   }, [fetchBoards]);
 
   useEffect(() => {
-    if (creating && inputRef.current) {
-      inputRef.current.focus();
-    }
+    if (creating && inputRef.current) inputRef.current.focus();
   }, [creating]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return boards;
+    return boards.filter((b) => b.title.toLowerCase().includes(q));
+  }, [boards, query]);
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
@@ -39,88 +45,178 @@ export default function BoardsPage() {
   }
 
   return (
-    <div className="-mx-4 -my-6 min-h-[calc(100vh-57px)] bg-blue-50/50 px-4 py-8 dark:bg-slate-950/50">
-      <div className="mx-auto max-w-7xl">
-        {/* Page title */}
-        <h1 className="mb-8 text-3xl font-bold tracking-tight text-slate-800 dark:text-white">
-          Your Boards
-        </h1>
+    <div className="-mx-4 -my-6 min-h-[calc(100vh-56px)] bg-slate-50 dark:bg-slate-950">
+      <div className="mx-auto max-w-[1280px] px-5 py-6 lg:px-8 lg:py-8">
+        {/* Page header */}
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                <span>Workspace</span>
+                <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                <span className="font-medium text-slate-700 dark:text-slate-300">Boards</span>
+              </div>
+              <h1 className="mt-2 text-[24px] font-semibold tracking-tight text-slate-900 dark:text-white">
+                Boards
+              </h1>
+              <p className="mt-1 max-w-[520px] text-sm leading-6 text-slate-600 dark:text-slate-400">
+                Semua papan kerja tim di satu tempat. Buat board baru, atur kolom, dan pantau progress real-time.
+              </p>
+            </div>
+            <button
+              onClick={() => setCreating(true)}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white ring-1 ring-slate-900 transition hover:bg-black dark:bg-white dark:text-slate-900 dark:ring-white dark:hover:bg-slate-100"
+            >
+              <Plus className="h-4 w-4" strokeWidth={2} />
+              Buat board
+            </button>
+          </div>
+
+          {/* Toolbar */}
+          <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-1 items-center gap-3">
+              <div className="relative flex w-full max-w-[380px] items-center">
+                <Search className="pointer-events-none absolute left-3 h-4 w-4 text-slate-400 dark:text-slate-500" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Cari board..."
+                  className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-slate-900/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:placeholder-slate-500 dark:focus:border-slate-600 dark:focus:ring-white/10"
+                />
+              </div>
+              <span className="hidden whitespace-nowrap text-xs text-slate-500 dark:text-slate-400 sm:inline">
+                {loading ? 'Memuat...' : `${filtered.length} board`}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="hidden text-xs text-slate-500 dark:text-slate-400 lg:inline">Tampilan</span>
+              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
+                <button
+                  aria-label="Grid view"
+                  onClick={() => setView('grid')}
+                  className={`rounded-md px-2.5 py-1.5 ${view === 'grid' ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200 dark:bg-slate-700 dark:text-white dark:ring-slate-600' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
+                <button
+                  aria-label="List view"
+                  onClick={() => setView('list')}
+                  className={`rounded-md px-2.5 py-1.5 ${view === 'list' ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200 dark:bg-slate-700 dark:text-white dark:ring-slate-600' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+                >
+                  <List className="h-4 w-4" />
+                </button>
+              </div>
+              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Live
+              </span>
+            </div>
+          </div>
+        </div>
 
         {/* Error */}
         {error && (
-          <div className="mb-6 rounded-xl bg-red-50 px-5 py-4 text-sm font-medium text-red-600 dark:bg-red-950/50 dark:text-red-400">
+          <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
             {error}
           </div>
         )}
 
         {/* Loading */}
-        {loading && <SkeletonBoardList />}
+        {loading && (
+          <div className="mt-6">
+            <SkeletonBoardList />
+          </div>
+        )}
 
-        {/* Empty state */}
+        {/* Empty — no boards at all */}
         {!loading && !error && boards.length === 0 && !creating && (
-          <div className="mt-16 flex flex-col items-center text-center">
-            <div className="mb-5 text-6xl">📋</div>
-            <h2 className="text-xl font-bold text-slate-700 dark:text-slate-300">No boards yet</h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Create your first board to get started.
+          <div className="mt-8 rounded-xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center dark:border-slate-700 dark:bg-slate-900">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+              <Clock3 className="h-6 w-6 text-slate-500 dark:text-slate-400" strokeWidth={1.6} />
+            </div>
+            <h2 className="mt-4 text-base font-semibold text-slate-900 dark:text-white">Belum ada board</h2>
+            <p className="mx-auto mt-1.5 max-w-[420px] text-sm leading-6 text-slate-600 dark:text-slate-400">
+              Buat board pertama untuk mulai atur tugas. Template siap pakai — setup kurang dari 1 menit.
             </p>
             <button
-              className="mt-6 inline-flex items-center gap-2 rounded-full bg-emerald-500 px-6 py-3 text-sm font-bold text-white shadow-sm shadow-emerald-200 transition-all duration-200 hover:scale-[1.03] hover:bg-emerald-600 hover:shadow-md hover:shadow-emerald-300 active:scale-95"
               onClick={() => setCreating(true)}
+              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-medium text-white ring-1 ring-slate-900 transition hover:bg-black dark:bg-white dark:text-slate-900 dark:ring-white dark:hover:bg-slate-100"
             >
-              <Plus className="h-4 w-4" strokeWidth={2.5} />
-              Create New Board
+              <Plus className="h-4 w-4" /> Buat board pertama
+            </button>
+            <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">Gratis selama trial • Bisa undang tim nanti</p>
+          </div>
+        )}
+
+        {/* No results for search */}
+        {!loading && !error && boards.length > 0 && filtered.length === 0 && !creating && (
+          <div className="mt-8 rounded-xl border border-slate-200 bg-white px-6 py-10 text-center dark:border-slate-700 dark:bg-slate-900">
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Tidak ada board yang cocok dengan “{query}”</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Coba kata kunci lain atau buat board baru.</p>
+            <button onClick={() => setQuery('')} className="mt-4 text-sm font-medium text-slate-900 underline decoration-slate-300 underline-offset-4 hover:decoration-slate-900 dark:text-white dark:decoration-slate-600 dark:hover:decoration-white">
+              Bersihkan pencarian
             </button>
           </div>
         )}
 
-        {/* Grid */}
-        {!loading && (boards.length > 0 || creating) && (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-            {/* Create Board card — always first */}
+        {/* Grid / List */}
+        {!loading && (filtered.length > 0 || creating) && (
+          <div className={view === 'grid' ? 'mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3' : 'mt-6 grid grid-cols-1 gap-3'}>
+            {/* Create card — first */}
             {creating ? (
-              <div className="rounded-2xl border-2 border-emerald-300 bg-white p-5 shadow-md dark:border-emerald-700 dark:bg-slate-800">
+              <div className="rounded-xl border border-slate-300 bg-white p-4 shadow-sm ring-2 ring-slate-900/10 dark:border-slate-600 dark:bg-slate-900 dark:ring-white/10">
                 <form onSubmit={onCreate}>
+                  <label htmlFor="board-title" className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    Nama board
+                  </label>
                   <input
+                    id="board-title"
                     ref={inputRef}
-                    className="w-full rounded-xl bg-gray-50 px-4 py-3 text-sm text-slate-700 placeholder-gray-400 outline-none ring-1 ring-gray-200 transition-all focus:ring-2 focus:ring-emerald-400 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder="Board name..."
+                    placeholder="Mis. Q4 Launch, Sprint 12..."
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-900/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-slate-600 dark:focus:ring-white/10"
                     onKeyDown={(e) => e.key === 'Escape' && handleCancel()}
                   />
                   <div className="mt-3 flex gap-2">
                     <button
-                      className="rounded-full bg-emerald-500 px-4 py-2 text-xs font-bold text-white transition-all hover:scale-[1.03] hover:bg-emerald-600 active:scale-95"
                       type="submit"
+                      className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white ring-1 ring-slate-900 hover:bg-black dark:bg-white dark:text-slate-900 dark:ring-white dark:hover:bg-slate-100"
                     >
-                      Create
+                      Buat
                     </button>
                     <button
-                      className="rounded-full px-4 py-2 text-xs font-medium text-slate-500 transition hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-700"
                       type="button"
                       onClick={handleCancel}
+                      className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                     >
-                      Cancel
+                      Batal
                     </button>
                   </div>
                 </form>
               </div>
             ) : (
               <button
-                className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-slate-300 bg-white/60 p-8 text-slate-400 transition-all duration-200 hover:-translate-y-1 hover:border-emerald-300 hover:bg-white hover:text-emerald-500 hover:shadow-lg dark:border-slate-600 dark:bg-slate-800/60 dark:hover:border-emerald-600 dark:hover:text-emerald-400"
                 onClick={() => setCreating(true)}
+                className="group flex min-h-[132px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white px-6 py-8 text-slate-500 transition hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
               >
-                <Plus className="h-10 w-10" strokeWidth={1.5} />
-                <span className="text-sm font-semibold">Create New Board</span>
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white group-hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:group-hover:border-slate-600">
+                  <Plus className="h-5 w-5" strokeWidth={1.8} />
+                </span>
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Buat board baru</span>
+                <span className="text-xs text-slate-500 dark:text-slate-400">Board • kolom • task</span>
               </button>
             )}
 
-            {/* Board cards */}
-            {boards.map((board) => (
-              <BoardCard key={board.id} board={board} />
+            {filtered.map((board) => (
+              <BoardCard key={board.id} board={board} variant={view} />
             ))}
           </div>
+        )}
+
+        {!loading && filtered.length > 0 && (
+          <p className="mt-8 border-t border-slate-200 pt-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+            Menampilkan {filtered.length} dari {boards.length} board • Update real-time via SSE
+          </p>
         )}
       </div>
     </div>

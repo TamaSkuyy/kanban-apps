@@ -225,7 +225,14 @@ func NewRouter(db *pgxpool.Pool) *gin.Engine {
 	auth := api.Group("/auth")
 	auth.POST("/register", s.register)
 	auth.POST("/login", s.login)
+	auth.POST("/verify", s.verifyEmail)
+	auth.POST("/otp/request", s.requestOTP)
+	auth.POST("/otp/verify", s.verifyOTPLogin)
+	auth.POST("/forgot", s.forgotPassword)
+	auth.POST("/reset", s.resetPassword)
 	auth.GET("/me", s.jwtMiddleware(), s.me)
+
+	api.POST("/webhooks/stripe", s.stripeWebhook)
 
 	protected := api.Group("")
 	protected.Use(s.jwtMiddleware())
@@ -247,6 +254,11 @@ func NewRouter(db *pgxpool.Pool) *gin.Engine {
 	protected.DELETE("/tasks/:id", s.deleteTask)
 	protected.POST("/columns/:colId/tasks", s.createTask)
 	protected.PUT("/columns/:id", s.updateColumn)
+
+	protected.GET("/workspaces", s.listWorkspaces)
+	protected.POST("/workspaces", s.createWorkspace)
+	protected.POST("/billing/checkout", s.billingCheckout)
+	protected.POST("/billing/portal", s.billingPortal)
 
 	return r
 }
@@ -318,6 +330,7 @@ func (s *server) jwtMiddleware() gin.HandlerFunc {
 
 func (s *server) register(c *gin.Context) {
 	var req struct {
+		Name     string `json:"name"`
 		Email    string `json:"email" binding:"required,email"`
 		Password string `json:"password" binding:"required,min=6"`
 	}
@@ -332,14 +345,28 @@ func (s *server) register(c *gin.Context) {
 	}
 
 	var userID string
+	// Try with name column (SaaS), fallback to old schema
 	err = s.db.QueryRow(c.Request.Context(), `
-		INSERT INTO users (email, password_hash)
-		VALUES ($1, $2)
+		INSERT INTO users (name, email, password_hash)
+		VALUES ($1, $2, $3)
 		RETURNING id
-	`, req.Email, hash).Scan(&userID)
+	`, req.Name, req.Email, hash).Scan(&userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "email already exists"})
-		return
+		// fallback if name column missing
+		err2 := s.db.QueryRow(c.Request.Context(), `
+			INSERT INTO users (email, password_hash)
+			VALUES ($1, $2)
+			RETURNING id
+		`, req.Email, hash).Scan(&userID)
+		if err2 != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "email already exists"})
+			return
+		}
+	}
+
+	// SaaS: send verification OTP (best-effort, don't block)
+	if _, err := s.createOTP(c, req.Email, "verify"); err != nil {
+		// log but continue
 	}
 
 	token, err := GenerateJWT(userID, req.Email)
@@ -347,7 +374,7 @@ func (s *server) register(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"token": token})
+	c.JSON(http.StatusCreated, gin.H{"token": token, "requires_verification": true, "email": req.Email})
 }
 
 func (s *server) login(c *gin.Context) {
