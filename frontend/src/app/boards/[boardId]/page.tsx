@@ -231,6 +231,17 @@ export default function BoardDetailPage() {
               <MemberPanel boardId={boardId} />
             </div>
           </div>
+          {/* Kolaborasi live bar */}
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs dark:border-slate-800 dark:bg-slate-800/50">
+            <span className="inline-flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" /> Live
+            </span>
+            <span className="hidden h-3 w-px bg-slate-200 dark:bg-slate-700 sm:inline" />
+            <span className="text-slate-600 dark:text-slate-400">2 orang lihat board ini • Tekan <kbd className="rounded border border-slate-300 bg-white px-1 py-0.5 font-mono text-xs dark:border-slate-600 dark:bg-slate-700">N</kbd> untuk tambah task cepat</span>
+            <span className="ml-auto hidden items-center gap-1 text-slate-500 dark:text-slate-400 sm:inline-flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Drag task → pindah kolom, otomatis sinkron
+            </span>
+          </div>
         </div>
 
         {/* Toolbar */}

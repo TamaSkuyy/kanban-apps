@@ -11,6 +11,7 @@ export default function BoardsPage() {
   const { boards, loading, error, fetchBoards, createBoard } = useKanbanStore();
   const [title, setTitle] = useState('');
   const [creating, setCreating] = useState(false);
+  const [template, setTemplate] = useState<string>('');
   const [query, setQuery] = useState('');
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [hasWorkspace, setHasWorkspace] = useState<boolean | null>(null);
@@ -50,15 +51,18 @@ export default function BoardsPage() {
     e.preventDefault();
     if (!title.trim()) {
       setCreating(false);
+      setTemplate('');
       return;
     }
-    await createBoard(title.trim());
+    await createBoard(title.trim(), undefined, template || undefined);
     setTitle('');
+    setTemplate('');
     setCreating(false);
   }
 
   function handleCancel() {
     setTitle('');
+    setTemplate('');
     setCreating(false);
   }
 
@@ -207,23 +211,37 @@ export default function BoardsPage() {
           </div>
         )}
 
-        {/* Empty — no boards at all */}
+        {/* Empty — template showcase */}
         {!loading && !error && boards.length === 0 && !creating && (
-          <div className="mt-8 rounded-xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center dark:border-slate-700 dark:bg-slate-900">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-              <Clock3 className="h-6 w-6 text-slate-500 dark:text-slate-400" strokeWidth={1.6} />
+          <div className="mt-8">
+            <div className="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white">Mulai dari template — 1 klik jadi</h2>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Pilih yang paling dekat dengan kerjaanmu, board langsung terisi contoh task. Bisa dihapus kapan saja.</p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                {[
+                  { id: '', name: 'Kosong', cols: 'To Do → In Progress → Done', tasks: '0 task', hint: 'Mulai bersih' },
+                  { id: 'warung', name: 'Warung Kopi', cols: 'Pesanan → Proses → Selesai', tasks: '5 task contoh', hint: 'Untuk UMKM' },
+                  { id: 'sprint', name: 'Sprint Dev', cols: 'Backlog → Doing → Done', tasks: '3 task contoh', hint: 'Untuk tim produk' },
+                ].map((tpl) => (
+                  <button
+                    key={tpl.id}
+                    onClick={() => {
+                      setTemplate(tpl.id);
+                      setTitle(tpl.name === 'Kosong' ? '' : tpl.name);
+                      setCreating(true);
+                      setTimeout(() => inputRef.current?.focus(), 50);
+                    }}
+                    className="group text-left rounded-xl border border-slate-200 bg-slate-50 p-4 hover:border-slate-300 hover:bg-white dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-800/80"
+                  >
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{tpl.name}</p>
+                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">{tpl.cols}</p>
+                    <p className="mt-2 inline-flex rounded-full bg-white px-2 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700">{tpl.tasks}</p>
+                    <p className="mt-1 text-xs text-slate-500">{tpl.hint}</p>
+                  </button>
+                ))}
+              </div>
+              <p className="mt-4 text-center text-xs text-slate-500 dark:text-slate-400">Atau buat manual — klik “Buat board baru” di kanan atas</p>
             </div>
-            <h2 className="mt-4 text-base font-semibold text-slate-900 dark:text-white">Belum ada board</h2>
-            <p className="mx-auto mt-1.5 max-w-[420px] text-sm leading-6 text-slate-600 dark:text-slate-400">
-              Buat board pertama untuk mulai atur tugas. Template siap pakai — setup kurang dari 1 menit.
-            </p>
-            <button
-              onClick={() => setCreating(true)}
-              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-medium text-white ring-1 ring-slate-900 transition hover:bg-black dark:bg-white dark:text-slate-900 dark:ring-white dark:hover:bg-slate-100"
-            >
-              <Plus className="h-4 w-4" /> Buat board pertama
-            </button>
-            <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">Gratis selama trial • Bisa undang tim nanti</p>
           </div>
         )}
 
@@ -257,6 +275,26 @@ export default function BoardsPage() {
                     className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-900/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-slate-600 dark:focus:ring-white/10"
                     onKeyDown={(e) => e.key === 'Escape' && handleCancel()}
                   />
+                  <div className="mt-3">
+                    <p className="mb-1.5 text-xs font-medium text-slate-600 dark:text-slate-400">Template</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { id: '', label: 'Kosong', desc: 'To Do • In Progress • Done' },
+                        { id: 'warung', label: 'Warung', desc: 'Pesanan • Proses • Selesai' },
+                        { id: 'sprint', label: 'Sprint', desc: 'Backlog • Doing • Done' },
+                      ].map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => setTemplate(t.id)}
+                          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${template === t.id ? 'border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}
+                          title={t.desc}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="mt-3 flex gap-2">
                     <button
                       type="submit"

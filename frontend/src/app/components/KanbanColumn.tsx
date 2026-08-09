@@ -131,11 +131,12 @@ export default function KanbanColumn({
           </form>
         ) : (
           <button
-            className="flex w-full items-center gap-1.5 rounded-lg border border-dashed border-slate-300 bg-white px-3 py-2.5 text-xs font-medium text-slate-500 transition hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-300"
+            className="group flex w-full items-center gap-1.5 rounded-lg border border-dashed border-slate-300 bg-white px-3 py-2.5 text-xs font-medium text-slate-500 transition hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-300"
             onClick={startAdding}
           >
             <Plus className="h-3.5 w-3.5" strokeWidth={2} />
             Tambah task
+            <span className="ml-auto hidden rounded border border-slate-300 bg-white px-1 py-0.5 font-mono text-xs text-slate-500 group-hover:border-slate-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-400 sm:inline">N</span>
           </button>
         )}
       </div>

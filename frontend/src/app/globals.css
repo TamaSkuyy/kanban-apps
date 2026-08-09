@@ -41,3 +41,13 @@ body {
 .column-task-list {
   transition: min-height 0.2s ease;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-task-enter,
+  .animate-drop-bounce {
+    animation: none !important;
+  }
+  .column-task-list {
+    transition: none !important;
+  }
+}

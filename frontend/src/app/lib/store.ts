@@ -21,7 +21,7 @@ type KanbanState = {
   error: string | null;
   myRole: string | null;
   fetchBoards: (workspaceId?: string) => Promise<void>;
-  createBoard: (title: string, workspaceId?: string) => Promise<void>;
+  createBoard: (title: string, workspaceId?: string, template?: string) => Promise<void>;
   updateBoard: (boardId: string, title: string, themeColor?: string | null) => Promise<void>;
   deleteBoard: (boardId: string) => Promise<void>;
   fetchBoard: (boardId: string) => Promise<void>;
@@ -57,12 +57,13 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
     }
   },
 
-  createBoard: async (title: string, workspaceId?: string) => {
+  createBoard: async (title: string, workspaceId?: string, template?: string) => {
     set({ error: null });
     try {
       const ws = workspaceId ?? (typeof window !== 'undefined' ? localStorage.getItem('workspace_id') : null);
       const body: Record<string, unknown> = { title };
       if (ws) body.workspace_id = ws;
+      if (template) body.template = template;
       const board = await apiFetch<Board>('/api/boards', {
         method: 'POST',
         body: JSON.stringify(body),

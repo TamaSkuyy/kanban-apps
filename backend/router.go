@@ -548,6 +548,7 @@ func (s *server) createBoard(c *gin.Context) {
 		Title       string  `json:"title" binding:"required"`
 		ThemeColor  *string `json:"theme_color"`
 		WorkspaceID *string `json:"workspace_id"`
+		Template    *string `json:"template"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
@@ -606,7 +607,30 @@ func (s *server) createBoard(c *gin.Context) {
 		return
 	}
 
-	defaults := []string{"To Do", "In Progress", "Done"}
+	templateVal := ""
+	if req.Template != nil {
+		templateVal = *req.Template
+	}
+	var defaults []string
+	var sampleTasks map[string][]string
+	switch templateVal {
+	case "warung":
+		defaults = []string{"Pesanan", "Proses", "Selesai"}
+		sampleTasks = map[string][]string{
+			"Pesanan": {"Pesanan #101 Kopi Susu - Meja 3", "Stok gula aren menipis"},
+			"Proses":  {"Buat Kopi Susu — Rina"},
+			"Selesai": {"Pesanan #98 selesai", "Laporan harian"},
+		}
+	case "sprint":
+		defaults = []string{"Backlog", "Doing", "Done"}
+		sampleTasks = map[string][]string{
+			"Backlog": {"Setup SSE realtime", "Desain landing pricing"},
+			"Doing":   {"Drag & drop 60fps"},
+			"Done":    {"Onboarding checklist"},
+		}
+	default:
+		defaults = []string{"To Do", "In Progress", "Done"}
+	}
 	b.Columns = make([]Column, 0, len(defaults))
 	for i, title := range defaults {
 		var col Column
@@ -618,6 +642,14 @@ func (s *server) createBoard(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create default columns"})
 			return
+		}
+		// seed sample tasks for template
+		if tasks, ok := sampleTasks[title]; ok {
+			for j, tTitle := range tasks {
+				var t Task
+				_ = tx.QueryRow(c.Request.Context(), `INSERT INTO tasks (column_id, title, position) VALUES ($1,$2,$3) RETURNING id, column_id, title, description, assignee, due_date, labels, position, created_at, updated_at`, col.ID, tTitle, j).Scan(&t.ID, &t.ColumnID, &t.Title, &t.Description, &t.Assignee, &t.DueDate, &t.Labels, &t.Position, &t.CreatedAt, &t.UpdatedAt)
+				col.Tasks = append(col.Tasks, t)
+			}
 		}
 		b.Columns = append(b.Columns, col)
 	}
