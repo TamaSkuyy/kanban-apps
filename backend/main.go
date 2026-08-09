@@ -17,6 +17,21 @@ func main() {
 	}
 	defer db.Close()
 
+	if os.Getenv("RUN_MIGRATIONS") == "1" {
+		slog.Info("running migrations")
+		files, _ := os.ReadDir("migrations")
+		for _, f := range files {
+			if len(f.Name()) > 7 && f.Name()[len(f.Name())-7:] == ".up.sql" {
+				b, _ := os.ReadFile("migrations/" + f.Name())
+				if _, err := db.Exec(context.Background(), string(b)); err != nil {
+					slog.Warn("migration failed", "file", f.Name(), "error", err)
+				} else {
+					slog.Info("migration applied", "file", f.Name())
+				}
+			}
+		}
+	}
+
 	r := NewRouter(db)
 
 	addr := os.Getenv("BACKEND_ADDR")

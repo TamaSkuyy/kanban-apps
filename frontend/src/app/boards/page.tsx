@@ -190,8 +190,13 @@ export default function BoardsPage() {
 
         {/* Error */}
         {error && (
-          <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-            {error}
+          <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 dark:border-red-900 dark:bg-red-950">
+            <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+            {(error.toLowerCase().includes('limit') || error.toLowerCase().includes('member')) && (
+              <a href="/billing" className="mt-2 inline-flex rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-black dark:bg-white dark:text-slate-900">
+                Upgrade paket — lihat billing
+              </a>
+            )}
           </div>
         )}
 

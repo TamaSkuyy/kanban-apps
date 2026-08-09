@@ -38,20 +38,20 @@ Dokumen ini adalah **checklist teknis** supaya app jadi SaaS beneran, bukan cuma
 - [x] **Accept flow** — jika user belum ada → redirect register + auto-accept setelah verify
 - [x] **Frontend** — halaman `/invite/:token` + banner pending invites di boards
 
-## 4) Billing & Entitlements (Stripe)
-- [ ] **Env & keys** — `STRIPE_SECRET`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_SCALE`
-- [ ] **Checkout** — `POST /billing/checkout {workspace_id, plan}` buat `stripe.CheckoutSession` → return `url`
-- [ ] **Portal** — `POST /billing/portal` buat `stripe.BillingPortalSession`
-- [ ] **Webhook** — verifikasi `Stripe-Signature`, handle `checkout.session.completed`, `customer.subscription.updated|deleted` → upsert `subscriptions` + `entitlements` (starter 3/3, pro 100/50, scale unlimited)
-- [ ] **Enforcement** — `checkEntitlements` di `createBoard` & `addMember` → `403 {code:"limit_reached", upgrade_url:"/#harga"}`
+## 4) Billing & Entitlements (Stripe) — Sudah
+- [x] **Env & keys** — `STRIPE_SECRET`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_SCALE`
+- [x] **Checkout** — `POST /billing/checkout {workspace_id, plan}` buat `stripe.CheckoutSession` → return `url`
+- [x] **Portal** — `POST /billing/portal` buat `stripe.BillingPortalSession`
+- [x] **Webhook** — verifikasi `Stripe-Signature`, handle `checkout.session.completed`, `customer.subscription.updated|deleted` → upsert `subscriptions` + `entitlements` (starter 3/3, pro 100/50, scale unlimited)
+- [x] **Enforcement** — `checkEntitlements` di `createBoard` & `addMember` → `403 {code:"limit_reached", upgrade_url:"/#harga"}`
 - [ ] **Frontend** — `app/page.tsx` pricing CTA → checkout, `boards/page` limit banner, billing page `GET /billing/subscription`
 
-## 5) Kepatuhan & Hardening
-- [ ] **GDPR** — `DELETE /api/me` anon email → `deleted_user_{id}@example.com`, `GET /api/me/export` JSON dump
-- [ ] **Rate limit per-workspace** — `rate.Limit` key = `ip + userID + workspaceID`
-- [ ] **Audit lengkap** — `activities.workspace_id` wajib; tulis untuk `workspace.created`, `invite.sent/accepted`, `board.created`, `member.role_changed`
-- [ ] **Observability** — `slog` tambah `workspace_id`, `board_id`; `GET /health` cek DB + mailer + stripe
-- [ ] **Backup & migrasi prod** — `golang-migrate` atau `tern` runner di `main.go`; `Caddyfile` prod sudah ada
+## 5) Kepatuhan & Hardening — Sudah
+- [x] **GDPR** — `DELETE /api/me` anon email → `deleted_user_{id}@example.com`, `GET /api/me/export` JSON dump
+- [x] **Rate limit per-workspace** — `rate.Limit` key = `ip + userID + workspaceID`
+- [x] **Audit lengkap** — `activities.workspace_id` wajib; tulis untuk `workspace.created`, `invite.sent/accepted`, `board.created`, `member.role_changed`
+- [x] **Observability** — `slog` tambah `workspace_id`, `board_id`; `GET /health` cek DB + mailer + stripe
+- [x] **Backup & migrasi prod** — `golang-migrate` atau `tern` runner di `main.go`; `Caddyfile` prod sudah ada
 
 ## 6) Nice-to-have (Setelah SaaS inti jalan)
 - [ ] OAuth Google (`POST /auth/oauth/google`) — toggle `Lanjutkan dengan Google` sudah ada di login/register

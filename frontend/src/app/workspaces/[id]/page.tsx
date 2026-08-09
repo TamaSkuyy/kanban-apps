@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Building2, Users, Trash2, Pencil, Shield, Mail, Layers, Plus } from 'lucide-react';
+import { ArrowLeft, Building2, Users, Trash2, Pencil, Shield, Mail, Layers, Plus, CreditCard } from 'lucide-react';
 import { apiFetch } from '../../lib/api';
 
 type Workspace = { id: string; slug: string; name: string; owner_id: string };
@@ -22,6 +22,7 @@ export default function WorkspaceDetailPage() {
   const [nameDraft, setNameDraft] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'member' | 'admin' | 'viewer'>('member');
+  const [billing, setBilling] = useState<{ plan: string; status: string; entitlements: { max_boards: number; max_members: number } } | null>(null);
 
   async function load() {
     try {
@@ -39,6 +40,10 @@ export default function WorkspaceDetailPage() {
     try {
       const b = await apiFetch<{ boards: Board[] }>(`/api/workspaces/${wsId}/boards`);
       setBoards(b.boards);
+    } catch {}
+    try {
+      const s = await apiFetch<{ plan: string; status: string; entitlements: { max_boards: number; max_members: number } }>(`/api/billing/subscription?workspace_id=${wsId}`);
+      setBilling(s as any);
     } catch {}
   }
 
@@ -195,6 +200,26 @@ export default function WorkspaceDetailPage() {
               ))}
               {members.length === 0 && <p className="py-4 text-center text-xs text-slate-500">Belum ada anggota selain kamu.</p>}
             </ul>
+          </div>
+        </div>
+
+        {/* Billing */}
+        <div className="mt-6 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+            <CreditCard className="h-4 w-4" /> Billing
+          </h2>
+          {billing ? (
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-slate-700 dark:bg-slate-800">Plan: <span className="font-medium capitalize">{billing.plan}</span> ({billing.status})</span>
+              <span className="text-xs text-slate-500">{billing.entitlements.max_boards} boards • {billing.entitlements.max_members} anggota max</span>
+              <a href="/billing" className="ml-auto rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Kelola billing</a>
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-slate-500">Memuat paket...</p>
+          )}
+          <div className="mt-4 flex gap-2">
+            <button onClick={async () => { await apiFetch('/api/billing/checkout', { method: 'POST', body: JSON.stringify({ workspace_id: wsId, plan: 'pro' }) }); location.reload(); }} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-black dark:bg-white dark:text-slate-900">Upgrade ke Pro</button>
+            <a href="/billing" className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Lihat semua paket</a>
           </div>
         </div>
       </div>

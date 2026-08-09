@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log/slog"
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
@@ -247,6 +248,7 @@ func (s *server) createWorkspace(c *gin.Context) {
 	_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'owner')`, wsID, userID)
 	_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO subscriptions (workspace_id, plan, status, trial_ends_at) VALUES ($1,'starter','trialing', now() + interval '14 days') ON CONFLICT (workspace_id) DO NOTHING`, wsID)
 	_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO entitlements (workspace_id, max_boards, max_members) VALUES ($1,3,3) ON CONFLICT (workspace_id) DO NOTHING`, wsID)
+	slog.Info("audit", "action", "workspace.created", "workspace_id", wsID, "user_id", userID)
 	c.JSON(http.StatusCreated, gin.H{"id": wsID, "slug": slug, "name": req.Name})
 }
 
@@ -417,6 +419,9 @@ func (s *server) addWorkspaceMember(c *gin.Context) {
     if req.Role != "member" && req.Role != "admin" && req.Role != "viewer" {
         req.Role = "member"
     }
+    if !s.checkMemberEntitlements(c, wsID) {
+        return
+    }
     var targetID string
     err := s.db.QueryRow(c.Request.Context(), `SELECT id FROM users WHERE email=$1`, req.Email).Scan(&targetID)
     if err != nil {
@@ -477,6 +482,9 @@ func (s *server) createInvite(c *gin.Context) {
 	if req.Role != "member" && req.Role != "admin" && req.Role != "viewer" {
 		req.Role = "member"
 	}
+	if !s.checkMemberEntitlements(c, wsID) {
+        return
+    }
 	token, _ := generateInviteToken()
 	hash := HashToken(token)
 	expires := time.Now().Add(7 * 24 * time.Hour)
@@ -494,6 +502,7 @@ func (s *server) createInvite(c *gin.Context) {
 	link = link + "/invite/" + token
 	_ = NewMailer().Send(req.Email, "Undangan workspace "+wsName, mailInvite(wsName, link))
 	_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO email_logs (to_email, subject, purpose) VALUES ($1,$2,$3)`, req.Email, "Invite "+wsName, "invite")
+	slog.Info("audit", "action", "invite.sent", "workspace_id", wsID, "email", req.Email, "role", req.Role)
 	c.JSON(201, gin.H{"token": token, "link": link})
 }
 
@@ -572,6 +581,7 @@ func (s *server) acceptInvite(c *gin.Context) {
 	}
 	_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,$3) ON CONFLICT (workspace_id, user_id) DO UPDATE SET role=EXCLUDED.role`, wsID, userID, role)
 	_, _ = s.db.Exec(c.Request.Context(), `UPDATE invites SET status='accepted' WHERE id=$1`, inviteID)
+	slog.Info("audit", "action", "invite.accepted", "workspace_id", wsID, "user_id", userID)
 	_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO subscriptions (workspace_id) VALUES ($1) ON CONFLICT DO NOTHING`, wsID)
 	_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO entitlements (workspace_id) VALUES ($1) ON CONFLICT DO NOTHING`, wsID)
 	c.JSON(200, gin.H{"accepted": true, "workspace_id": wsID})
@@ -630,23 +640,161 @@ func (s *server) acceptInviteByID(c *gin.Context) {
     c.JSON(200, gin.H{"accepted": true, "workspace_id": wsID})
 }
 
-// ---- Billing stubs ----
+
+// ---- GDPR ----
+
+func (s *server) deleteMe(c *gin.Context) {
+    userID := c.GetString("userID")
+    anon := "deleted_" + userID[:8] + "@deleted.local"
+    _, _ = s.db.Exec(c.Request.Context(), `UPDATE users SET email=$1, name='Deleted User', password_hash='deleted', email_verified_at=NULL WHERE id=$2`, anon, userID)
+    c.JSON(200, gin.H{"deleted": true, "anon_email": anon})
+}
+
+func (s *server) exportMe(c *gin.Context) {
+    userID := c.GetString("userID")
+    var email, name string
+    _ = s.db.QueryRow(c.Request.Context(), `SELECT email, COALESCE(name,'') FROM users WHERE id=$1`, userID).Scan(&email, &name)
+    rows, _ := s.db.Query(c.Request.Context(), `SELECT w.id, w.name, w.slug FROM workspaces w JOIN workspace_members wm ON wm.workspace_id=w.id WHERE wm.user_id=$1`, userID)
+    var workspaces []gin.H
+    if rows != nil {
+        defer rows.Close()
+        for rows.Next() {
+            var id, n, slug string
+            _ = rows.Scan(&id, &n, &slug)
+            workspaces = append(workspaces, gin.H{"id": id, "name": n, "slug": slug})
+        }
+    }
+    rows2, _ := s.db.Query(c.Request.Context(), `SELECT b.id, b.title, b.workspace_id FROM boards b WHERE b.user_id=$1`, userID)
+    var boards []gin.H
+    if rows2 != nil {
+        defer rows2.Close()
+        for rows2.Next() {
+            var id, title string
+            var ws *string
+            _ = rows2.Scan(&id, &title, &ws)
+            boards = append(boards, gin.H{"id": id, "title": title, "workspace_id": ws})
+        }
+    }
+    if workspaces == nil { workspaces = []gin.H{} }
+    if boards == nil { boards = []gin.H{} }
+    c.JSON(200, gin.H{"user": gin.H{"id": userID, "email": email, "name": name}, "workspaces": workspaces, "boards": boards})
+}
+
+
+// ---- Billing ----
+
+func entitlementsForPlan(plan string) (maxBoards, maxMembers int, features string) {
+	switch plan {
+	case "pro":
+		return 100, 50, `{"timeline":true,"workload":true}`
+	case "scale":
+		return 1000, 1000, `{"timeline":true,"workload":true,"sso":true}`
+	default:
+		return 3, 3, `{}`
+	}
+}
 
 func (s *server) billingCheckout(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"url": "https://checkout.stripe.com/stub", "stub": true})
+	var req struct {
+		WorkspaceID string `json:"workspace_id" binding:"required"`
+		Plan        string `json:"plan" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, gin.H{"error": "invalid request"})
+		return
+	}
+	userID := c.GetString("userID")
+	var ok bool
+	_ = s.db.QueryRow(c.Request.Context(), `SELECT true FROM workspace_members WHERE workspace_id=$1 AND user_id=$2 AND role IN ('owner','admin')`, req.WorkspaceID, userID).Scan(&ok)
+	if !ok {
+		c.JSON(403, gin.H{"error": "only owner/admin can checkout"})
+		return
+	}
+	if os.Getenv("STRIPE_SECRET") == "" {
+		// dev stub: langsung upgrade entitlements
+		maxB, maxM, feat := entitlementsForPlan(req.Plan)
+		_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO subscriptions (workspace_id, plan, status) VALUES ($1,$2,'active') ON CONFLICT (workspace_id) DO UPDATE SET plan=$2, status='active', updated_at=now()`, req.WorkspaceID, req.Plan)
+		_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO entitlements (workspace_id, max_boards, max_members, features) VALUES ($1,$2,$3,$4::jsonb) ON CONFLICT (workspace_id) DO UPDATE SET max_boards=$2, max_members=$3, features=$4::jsonb`, req.WorkspaceID, maxB, maxM, feat)
+		c.JSON(200, gin.H{"url": "/workspaces/" + req.WorkspaceID + "?upgraded=" + req.Plan, "stub": true, "plan": req.Plan})
+		return
+	}
+	c.JSON(200, gin.H{"url": "https://checkout.stripe.com/stub", "stub": true, "plan": req.Plan})
 }
 
 func (s *server) billingPortal(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"url": "https://billing.stripe.com/stub", "stub": true})
+	var req struct {
+		WorkspaceID string `json:"workspace_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// also allow query param
+		req.WorkspaceID = c.Query("workspace_id")
+		if req.WorkspaceID == "" {
+			c.JSON(400, gin.H{"error": "workspace_id required"})
+			return
+		}
+	}
+	c.JSON(200, gin.H{"url": "https://billing.stripe.com/p/session/stub", "stub": true})
+}
+
+func (s *server) billingSubscription(c *gin.Context) {
+	wsID := c.Query("workspace_id")
+	if wsID == "" {
+		c.JSON(400, gin.H{"error": "workspace_id required"})
+		return
+	}
+	userID := c.GetString("userID")
+	var ok bool
+	_ = s.db.QueryRow(c.Request.Context(), `SELECT true FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, wsID, userID).Scan(&ok)
+	if !ok {
+		c.JSON(403, gin.H{"error": "not a member"})
+		return
+	}
+	var plan, status string
+	var trialEnds *time.Time
+	var maxB, maxM int
+	var features []byte
+	_ = s.db.QueryRow(c.Request.Context(), `SELECT plan, status, trial_ends_at FROM subscriptions WHERE workspace_id=$1`, wsID).Scan(&plan, &status, &trialEnds)
+	_ = s.db.QueryRow(c.Request.Context(), `SELECT max_boards, max_members, features FROM entitlements WHERE workspace_id=$1`, wsID).Scan(&maxB, &maxM, &features)
+	if plan == "" {
+		plan = "starter"
+		status = "trialing"
+	}
+	if maxB == 0 {
+		maxB, maxM = 3, 3
+	}
+	c.JSON(200, gin.H{"plan": plan, "status": status, "trial_ends_at": trialEnds, "entitlements": gin.H{"max_boards": maxB, "max_members": maxM, "features": string(features)}})
 }
 
 func (s *server) stripeWebhook(c *gin.Context) {
 	var req struct {
 		EventID string `json:"event_id"`
+		Plan    string `json:"plan"`
+		WorkspaceID string `json:"workspace_id"`
 	}
 	_ = c.ShouldBindJSON(&req)
 	if req.EventID != "" {
 		_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO stripe_events (event_id) VALUES ($1) ON CONFLICT DO NOTHING`, req.EventID)
 	}
+	// dev helper: if workspace_id + plan provided, apply entitlements
+	if req.WorkspaceID != "" && req.Plan != "" {
+		maxB, maxM, feat := entitlementsForPlan(req.Plan)
+		_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO subscriptions (workspace_id, plan, status) VALUES ($1,$2,'active') ON CONFLICT (workspace_id) DO UPDATE SET plan=$2, status='active'`, req.WorkspaceID, req.Plan)
+		_, _ = s.db.Exec(c.Request.Context(), `INSERT INTO entitlements (workspace_id, max_boards, max_members, features) VALUES ($1,$2,$3,$4::jsonb) ON CONFLICT (workspace_id) DO UPDATE SET max_boards=$2, max_members=$3, features=$4::jsonb`, req.WorkspaceID, maxB, maxM, feat)
+	}
 	c.JSON(http.StatusOK, gin.H{"received": true})
+}
+
+func (s *server) checkMemberEntitlements(c *gin.Context, workspaceID string) bool {
+	var maxM int
+	err := s.db.QueryRow(c.Request.Context(), `SELECT max_members FROM entitlements WHERE workspace_id=$1`, workspaceID).Scan(&maxM)
+	if err != nil {
+		return true
+	}
+	var count int
+	_ = s.db.QueryRow(c.Request.Context(), `SELECT count(*) FROM workspace_members WHERE workspace_id=$1`, workspaceID).Scan(&count)
+	if count >= maxM {
+		c.JSON(http.StatusForbidden, gin.H{"error": "member limit reached", "code": "member_limit", "limit": maxM, "upgrade_url": "/workspaces/" + workspaceID})
+		return false
+	}
+	return true
 }

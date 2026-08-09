@@ -53,6 +53,9 @@ export default function Navbar() {
           <Link href="/boards" className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">
             Boards
           </Link>
+          <Link href="/billing" className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">
+            Billing
+          </Link>
           <div className="hidden sm:block">
             <WorkspaceSwitcher />
           </div>
